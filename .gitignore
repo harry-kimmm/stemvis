@@ -1,0 +1,21 @@
+# OS / editor junk
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# future build tooling
+node_modules/
+dist/
+
+# never commit audio or rendered clips — large binaries + unreleased music
+*.wav
+*.mp3
+*.flac
+*.aiff
+*.ogg
+*.webm
+*.mp4
+*.mov
+stems/
+renders/
