@@ -15,7 +15,7 @@ Live version (once GitHub Pages is enabled):
 ## Use
 
 1. Export stems from FL Studio (split mixer tracks, or solo-bounce each bus)
-2. Load stems into the five channels: KICK / CHORDS / ARPS / VOX / FX
+2. Load stems into the eight channels: KICK / BASS / CLAP / HATS / CHORDS / ARPS / VOX / FX
 3. Optionally add center art, a background image, and a title overlay
 4. Play, hit LOOP on the hook, jam DICE + macro knobs until it feels right
 5. SET IN at the hook, pick 15/30/60s, REC → downloads an mp4 (webm fallback)
@@ -27,6 +27,7 @@ Keep the tab visible while recording — capture is real-time.
 - **Web Audio API** — one AnalyserNode per stem → envelope follower,
   transient onset detection, spectral centroid (rough pitch height)
 - **Canvas 2D layered renderer** — kick: frame punch + expanding rings ·
+  bass: low-end floor glow · clap: frame flash · hats: top-frame shimmer ·
   chords: gradient blob washes · arps: pitch-mapped particle spawns ·
   vox: waveform ring / cover-art pulse · fx: slice-glitch post-process
 - **Macro knobs** — ENERGY, SPREAD, CHAOS, HUE, STYLE, DRIFT; each modulates

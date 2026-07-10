@@ -236,7 +236,8 @@
     <div class="note">
       <b>flow:</b> export stems from FL (File → Export → split mixer tracks, or solo-bounce each group) →
       load them into channels → hit play → DICE + knobs until it feels right → SET IN at the hook → REC.
-      each channel drives its own layer: KICK punches the frame, CHORDS wash the background,
+      each channel drives its own layer: KICK punches the frame, BASS glows the floor,
+      CLAP flashes, HATS shimmer up top, CHORDS wash the background,
       ARPS spawn shapes pitched high→top / low→bottom, VOX drives the center ring or your art,
       FX triggers glitch. keep this tab visible while recording — capture is real-time.
     </div>
@@ -269,6 +270,9 @@ const fmtT = s => { s=Math.max(0,s); const m=Math.floor(s/60), r=Math.floor(s%60
 /* ---------- state ---------- */
 const ROLES = [
   {key:'kick',   label:'KICK'},
+  {key:'bass',   label:'BASS'},
+  {key:'clap',   label:'CLAP'},
+  {key:'hats',   label:'HATS'},
   {key:'chords', label:'CHORDS'},
   {key:'arps',   label:'ARPS'},
   {key:'vox',    label:'VOX'},
@@ -329,7 +333,7 @@ async function loadStem(key, file, stripEl){
   s.analyser.fftSize = 1024; s.analyser.smoothingTimeConstant = .5;
   s.timeData = new Float32Array(s.analyser.fftSize);
   s.freqData = new Uint8Array(s.analyser.frequencyBinCount);
-  s.env = 0; s.prevRms = 0; s.onset = false; s.lastOnsetT = 0; s.centroid = .5;
+  s.env = 0; s.prevRms = 0; s.peak = 0; s.onset = false; s.lastOnsetT = 0; s.centroid = .5;
   s.gain.connect(s.analyser); s.analyser.connect(masterGain);
   s.gain.gain.value = s.mute ? 0 : 1;
   stems[key] = s;
@@ -381,15 +385,18 @@ function analyse(dt){
     let sum=0;
     for(let i=0;i<s.timeData.length;i+=2) sum += s.timeData[i]*s.timeData[i];
     const rms = Math.sqrt(sum/(s.timeData.length/2));
+    // running peak (halves every ~2.5s) normalises per-stem loudness → 0..1
+    s.peak = Math.max(s.peak * Math.pow(.5, dt/2.5), rms);
+    const nrm = s.peak > .006 ? clamp(rms/s.peak, 0, 1) : 0;
     // envelope: instant attack, smooth release
-    s.env = rms > s.env ? rms : lerp(s.env, rms, 1-Math.pow(.001, dt*3));
-    // onset: rms jump over floor + refractory window
+    s.env = nrm > s.env ? nrm : lerp(s.env, nrm, 1-Math.pow(.001, dt*3));
+    // onset: relative jump vs recent level + refractory window
     s.onset = false;
-    const jump = rms - s.prevRms;
-    if(jump > 0.055 && rms > 0.03 && (now - s.lastOnsetT) > 0.085){
+    const jump = nrm - s.prevRms;
+    if(jump > 0.2 && nrm > 0.3 && (now - s.lastOnsetT) > 0.085){
       s.onset = true; s.lastOnsetT = now;
     }
-    s.prevRms = lerp(s.prevRms, rms, .55);
+    s.prevRms = lerp(s.prevRms, nrm, .55);
     // spectral centroid (brightness / rough pitch height)
     s.analyser.getByteFrequencyData(s.freqData);
     let num=0, den=0;
@@ -403,7 +410,7 @@ const hit = key => (stems[key] && !stems[key].mute) ? stems[key].onset : false;
 
 /* ---------- renderer ---------- */
 const cv = $('#viz'), ctx2d = cv.getContext('2d', {alpha:false});
-let particles = [], rings = [], punch = 0, glitch = 0, tGlobal = 0, lastFrame = performance.now();
+let particles = [], rings = [], sparks = [], punch = 0, glitch = 0, clapFlash = 0, tGlobal = 0, lastFrame = performance.now();
 let artImg = null, bgImg = null;
 
 /* grain texture */
@@ -443,6 +450,17 @@ function drawFrame(dt){
   /* triggers */
   if(hit('kick')){ punch = 1; rings.push({age:0}); }
   punch = Math.max(0, punch - dt*4.5);
+  if(hit('clap')) clapFlash = 1;
+  clapFlash = Math.max(0, clapFlash - dt*7);
+  if(hit('hats')){
+    const hE = env('hats');
+    const n = 3 + (hE*22|0);
+    for(let i=0;i<n;i++) sparks.push({
+      x:Math.random()*W, y:Math.random()*H*.55,
+      life:1, size:1+Math.random()*2.5*(1+hE*3)
+    });
+    if(sparks.length>240) sparks.splice(0, sparks.length-240);
+  }
   const fxE = env('fx');
   if(hit('fx')) glitch = Math.min(1, glitch + .55 + fxE*2);
   if(rng() < 0.006*params.chaos) glitch = Math.min(1, glitch+.3);   // chaos micro-glitch
@@ -471,6 +489,15 @@ function drawFrame(dt){
     ctx2d.globalAlpha = .34;
     ctx2d.drawImage(bgImg, cx-iw/2 + Math.sin(tGlobal*.3)*8*params.chaos, cy-ih/2, iw, ih);
     ctx2d.globalAlpha = 1;
+  }
+
+  /* BASS → low-end floor glow */
+  const bE = env('bass');
+  if(bE > .01){
+    const gB = ctx2d.createLinearGradient(0,H*.5,0,H);
+    gB.addColorStop(0, `hsla(${(bh+25)%360},70%,45%,0)`);
+    gB.addColorStop(1, `hsla(${(bh+25)%360},70%,45%,${clamp(bE*(.6+params.energy),0,.55)})`);
+    ctx2d.fillStyle = gB; ctx2d.fillRect(0,H*.5,W,H*.5);
   }
 
   /* CHORDS → gradient blobs */
@@ -527,6 +554,15 @@ function drawFrame(dt){
   }
   particles = particles.filter(p=>p.life>0 && p.y<H+60 && p.x>-60 && p.x<W+60);
 
+  /* HATS → top-frame shimmer sparks */
+  for(const sp of sparks){
+    sp.life -= dt*3.4;
+    if(sp.life<=0) continue;
+    ctx2d.fillStyle = `hsla(${bh},20%,95%,${sp.life*.75})`;
+    ctx2d.fillRect(sp.x, sp.y, sp.size, sp.size);
+  }
+  sparks = sparks.filter(sp=>sp.life>0);
+
   /* VOX → center art pulse and/or waveform ring */
   const vE = env('vox');
   const artScalePulse = 1 + vE*.16*(.5+params.energy) + punch*.04;
@@ -563,6 +599,12 @@ function drawFrame(dt){
     ctx2d.restore();
   }
   ctx2d.restore(); /* end world transform */
+
+  /* CLAP → frame flash */
+  if(clapFlash > .02){
+    ctx2d.fillStyle = `hsla(${bh},15%,92%,${clapFlash*.14*(.5+params.energy)})`;
+    ctx2d.fillRect(0,0,W,H);
+  }
 
   /* FX → glitch post-process (slice displacement + ghost) */
   if(glitch > .03){
@@ -612,7 +654,7 @@ function loop(){
   /* meters + transport */
   for(const r of ROLES){
     const s = stems[r.key];
-    if(s && s.meterEl) s.meterEl.style.width = clamp(s.env*260,0,100)+'%';
+    if(s && s.meterEl) s.meterEl.style.width = clamp(s.env*110,0,100)+'%';
   }
   if(playing){
     const t = playhead();
