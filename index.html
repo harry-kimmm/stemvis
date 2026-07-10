@@ -1,681 +1,1503 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>STEMVIS — stem-reactive video unit</title>
-<style>
-  :root{
-    --panel:#141416; --panel2:#1c1c1f; --panel3:#232327;
-    --line:#2c2c31; --ink:#e8e4dc; --dim:#8a93a6; --faint:#55565c;
-    --led:#ffa028; --led-dim:#7a5a2a; --rec:#ff4040; --ok:#7dd97a;
-    --mono:ui-monospace,'SF Mono','Cascadia Mono','JetBrains Mono',Menlo,Consolas,monospace;
-  }
-  *{box-sizing:border-box; margin:0; padding:0;}
-  html,body{height:100%;}
-  body{
-    background:#0d0d0f; color:var(--ink); font-family:var(--mono);
-    font-size:13px; -webkit-font-smoothing:antialiased; overflow-x:hidden;
-  }
-  ::selection{background:var(--led); color:#111;}
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>STEMVIS — stem-reactive video unit</title>
+  <style>
+    :root {
+      --panel: #141416;
+      --panel2: #1c1c1f;
+      --panel3: #232327;
+      --line: #2c2c31;
+      --ink: #e8e4dc;
+      --dim: #8a93a6;
+      --faint: #55565c;
+      --led: #ffa028;
+      --led-dim: #7a5a2a;
+      --rec: #ff4040;
+      --ok: #7dd97a;
+      --mono: ui-monospace, 'SF Mono', 'Cascadia Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+    }
 
-  header{
-    display:flex; align-items:baseline; gap:14px; padding:14px 20px;
-    border-bottom:1px solid var(--line); background:var(--panel);
-  }
-  .wordmark{font-weight:800; letter-spacing:.34em; font-size:15px;}
-  .wordmark .v{color:var(--led);}
-  .tagline{color:var(--faint); font-size:11px; letter-spacing:.08em;}
-  #status{margin-left:auto; font-size:11px; color:var(--dim); letter-spacing:.06em; text-align:right;}
-  #status.rec{color:var(--rec);}
-  #status.ok{color:var(--ok);}
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
 
-  main{
-    display:grid; grid-template-columns:minmax(0,1fr) 380px;
-    gap:0; min-height:calc(100vh - 49px);
-  }
-  @media (max-width:900px){ main{grid-template-columns:1fr;} }
+    html,
+    body {
+      height: 100%;
+    }
 
-  /* ---------- stage ---------- */
-  #stage{
-    display:flex; flex-direction:column; align-items:center; justify-content:flex-start;
-    padding:22px 22px 30px; gap:14px; background:
-      radial-gradient(1200px 600px at 50% 0%, #131316 0%, #0d0d0f 70%);
-  }
-  #canvasWrap{position:relative; line-height:0;}
-  canvas#viz{
-    background:#000; border:1px solid var(--line);
-    max-height:66vh; max-width:100%; height:auto;
-    box-shadow:0 0 0 1px #000, 0 18px 60px rgba(0,0,0,.55);
-  }
-  #recDot{
-    position:absolute; top:10px; left:10px; width:10px; height:10px; border-radius:50%;
-    background:var(--rec); box-shadow:0 0 10px var(--rec); display:none;
-    animation:blink 1s steps(2) infinite;
-  }
-  @keyframes blink{50%{opacity:.25;}}
+    body {
+      background: #0d0d0f;
+      color: var(--ink);
+      font-family: var(--mono);
+      font-size: 13px;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
 
-  /* transport */
-  #transport{width:100%; max-width:560px; display:flex; flex-direction:column; gap:10px;}
-  #timeline{display:flex; align-items:center; gap:10px;}
-  #playBtn{
-    width:44px; height:36px; background:var(--panel3); border:1px solid var(--line);
-    color:var(--ink); cursor:pointer; font-family:var(--mono); font-size:14px;
-  }
-  #playBtn:hover{border-color:var(--led);}
-  #seek{flex:1; appearance:none; height:4px; background:var(--panel3); outline:none; cursor:pointer;}
-  #seek::-webkit-slider-thumb{
-    appearance:none; width:12px; height:18px; background:var(--ink); cursor:pointer;
-  }
-  #seek::-moz-range-thumb{width:12px; height:18px; background:var(--ink); border:none; cursor:pointer;}
-  #clock{width:96px; text-align:right; color:var(--dim); font-size:12px; letter-spacing:.05em;}
+    ::selection {
+      background: var(--led);
+      color: #111;
+    }
 
-  #clipRow{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
-  .tbtn{
-    background:var(--panel2); border:1px solid var(--line); color:var(--dim);
-    font-family:var(--mono); font-size:11px; letter-spacing:.08em; padding:7px 10px; cursor:pointer;
-  }
-  .tbtn:hover{color:var(--ink); border-color:var(--faint);}
-  .tbtn.active{color:var(--led); border-color:var(--led);}
-  .spacer{flex:1;}
-  #recBtn{
-    background:var(--panel2); border:1px solid var(--rec); color:var(--rec);
-    font-weight:700; letter-spacing:.14em; padding:7px 16px; cursor:pointer; font-family:var(--mono); font-size:11px;
-  }
-  #recBtn:hover{background:var(--rec); color:#0d0d0f;}
-  #recBtn:disabled{opacity:.4; cursor:not-allowed;}
-  #clipInfo{font-size:11px; color:var(--faint); letter-spacing:.05em;}
+    header {
+      display: flex;
+      align-items: baseline;
+      gap: 14px;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+    }
 
-  /* ---------- rack ---------- */
-  #rack{
-    border-left:1px solid var(--line); background:var(--panel);
-    padding:18px 18px 40px; display:flex; flex-direction:column; gap:20px; overflow-y:auto;
-  }
-  @media (max-width:900px){ #rack{border-left:none; border-top:1px solid var(--line);} }
-  .section-label{
-    font-size:10px; letter-spacing:.28em; color:var(--faint); font-weight:700;
-    border-bottom:1px solid var(--line); padding-bottom:6px;
-  }
+    .wordmark {
+      font-weight: 800;
+      letter-spacing: .34em;
+      font-size: 15px;
+    }
 
-  /* channel strips */
-  .strip{
-    display:grid; grid-template-columns:64px 1fr 30px; gap:8px; align-items:center;
-    padding:7px 8px; background:var(--panel2); border:1px solid var(--line); margin-top:6px;
-  }
-  .strip .role{font-size:10px; letter-spacing:.12em; color:var(--dim); font-weight:700;}
-  .strip.loaded .role{color:var(--led);}
-  .strip .fileLbl{
-    position:relative; overflow:hidden; display:flex; flex-direction:column; gap:4px; cursor:pointer; min-width:0;
-  }
-  .strip .fname{
-    font-size:11px; color:var(--faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-  }
-  .strip.loaded .fname{color:var(--ink);}
-  .strip input[type=file]{position:absolute; inset:0; opacity:0; cursor:pointer;}
-  .meter{height:3px; background:var(--panel3); position:relative;}
-  .meter i{position:absolute; left:0; top:0; bottom:0; width:0%; background:var(--led); transition:none;}
-  .mute{
-    width:26px; height:26px; background:var(--panel3); border:1px solid var(--line);
-    color:var(--faint); font-size:10px; cursor:pointer; font-family:var(--mono);
-  }
-  .mute.on{color:var(--rec); border-color:var(--rec);}
+    .wordmark .v {
+      color: var(--led);
+    }
 
-  /* images + title */
-  .imgRow{display:flex; gap:8px; margin-top:6px;}
-  .imgSlot{
-    flex:1; position:relative; overflow:hidden; background:var(--panel2); border:1px dashed var(--line);
-    padding:10px 8px; text-align:center; font-size:10px; letter-spacing:.1em; color:var(--faint); cursor:pointer;
-  }
-  .imgSlot.loaded{border-style:solid; border-color:var(--led); color:var(--led);}
-  .imgSlot input{position:absolute; inset:0; opacity:0; cursor:pointer;}
-  #titleInput{
-    width:100%; margin-top:8px; background:var(--panel2); border:1px solid var(--line);
-    color:var(--ink); font-family:var(--mono); font-size:12px; padding:8px 10px; letter-spacing:.06em; outline:none;
-  }
-  #titleInput:focus{border-color:var(--led);}
-  #titleInput::placeholder{color:var(--faint);}
+    .tagline {
+      color: var(--faint);
+      font-size: 11px;
+      letter-spacing: .08em;
+    }
 
-  /* knobs */
-  #knobGrid{
-    display:grid; grid-template-columns:repeat(3,1fr); gap:16px 8px; margin-top:10px; justify-items:center;
-  }
-  .knob{display:flex; flex-direction:column; align-items:center; gap:6px; user-select:none;}
-  .knob .dial{
-    width:56px; height:56px; border-radius:50%; position:relative; cursor:ns-resize;
-    background:
-      radial-gradient(circle at 35% 30%, #2e2e33 0%, #1a1a1d 55%, #0f0f11 100%);
-    border:1px solid var(--line);
-    box-shadow: inset 0 2px 4px rgba(255,255,255,.05), 0 4px 10px rgba(0,0,0,.5);
-  }
-  .knob .dial::after{ /* tick ring */
-    content:''; position:absolute; inset:-5px; border-radius:50%;
-    border:1px solid var(--line); opacity:.5;
-  }
-  .knob .ind{
-    position:absolute; left:50%; top:50%; width:2px; height:22px;
-    background:var(--led); transform-origin:50% 0%; box-shadow:0 0 6px var(--led-dim);
-  }
-  .knob .klabel{font-size:9px; letter-spacing:.22em; color:var(--dim); font-weight:700;}
-  .knob .kval{font-size:10px; color:var(--faint); min-height:12px;}
-  .knob:hover .klabel{color:var(--ink);}
+    #status {
+      margin-left: auto;
+      font-size: 11px;
+      color: var(--dim);
+      letter-spacing: .06em;
+      text-align: right;
+    }
 
-  #diceRow{display:flex; gap:8px; margin-top:14px;}
-  #diceBtn{
-    flex:1; background:var(--panel2); border:1px solid var(--led); color:var(--led);
-    font-family:var(--mono); font-weight:800; letter-spacing:.22em; padding:12px; cursor:pointer; font-size:12px;
-  }
-  #diceBtn:hover{background:var(--led); color:#0d0d0f;}
-  #diceBtn:active{transform:translateY(1px);}
-  #seedTag{align-self:center; font-size:10px; color:var(--faint); letter-spacing:.08em; padding:0 6px;}
+    #status.rec {
+      color: var(--rec);
+    }
 
-  .note{font-size:10px; color:var(--faint); line-height:1.7; letter-spacing:.03em;}
-  .note b{color:var(--dim); font-weight:700;}
-</style>
+    #status.ok {
+      color: var(--ok);
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 380px;
+      gap: 0;
+      min-height: calc(100vh - 49px);
+    }
+
+    @media (max-width:900px) {
+      main {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* ---------- stage ---------- */
+    #stage {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 22px 22px 30px;
+      gap: 14px;
+      background:
+        radial-gradient(1200px 600px at 50% 0%, #131316 0%, #0d0d0f 70%);
+    }
+
+    #canvasWrap {
+      position: relative;
+      line-height: 0;
+    }
+
+    canvas#viz {
+      background: #000;
+      border: 1px solid var(--line);
+      max-height: 66vh;
+      max-width: 100%;
+      height: auto;
+      box-shadow: 0 0 0 1px #000, 0 18px 60px rgba(0, 0, 0, .55);
+    }
+
+    #recDot {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--rec);
+      box-shadow: 0 0 10px var(--rec);
+      display: none;
+      animation: blink 1s steps(2) infinite;
+    }
+
+    @keyframes blink {
+      50% {
+        opacity: .25;
+      }
+    }
+
+    /* transport */
+    #transport {
+      width: 100%;
+      max-width: 560px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    #timeline {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    #playBtn {
+      width: 44px;
+      height: 36px;
+      background: var(--panel3);
+      border: 1px solid var(--line);
+      color: var(--ink);
+      cursor: pointer;
+      font-family: var(--mono);
+      font-size: 14px;
+    }
+
+    #playBtn:hover {
+      border-color: var(--led);
+    }
+
+    #seek {
+      flex: 1;
+      appearance: none;
+      height: 4px;
+      background: var(--panel3);
+      outline: none;
+      cursor: pointer;
+    }
+
+    #seek::-webkit-slider-thumb {
+      appearance: none;
+      width: 12px;
+      height: 18px;
+      background: var(--ink);
+      cursor: pointer;
+    }
+
+    #seek::-moz-range-thumb {
+      width: 12px;
+      height: 18px;
+      background: var(--ink);
+      border: none;
+      cursor: pointer;
+    }
+
+    #clock {
+      width: 96px;
+      text-align: right;
+      color: var(--dim);
+      font-size: 12px;
+      letter-spacing: .05em;
+    }
+
+    #clipRow {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .tbtn {
+      background: var(--panel2);
+      border: 1px solid var(--line);
+      color: var(--dim);
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: .08em;
+      padding: 7px 10px;
+      cursor: pointer;
+    }
+
+    .tbtn:hover {
+      color: var(--ink);
+      border-color: var(--faint);
+    }
+
+    .tbtn.active {
+      color: var(--led);
+      border-color: var(--led);
+    }
+
+    .spacer {
+      flex: 1;
+    }
+
+    #recBtn {
+      background: var(--panel2);
+      border: 1px solid var(--rec);
+      color: var(--rec);
+      font-weight: 700;
+      letter-spacing: .14em;
+      padding: 7px 16px;
+      cursor: pointer;
+      font-family: var(--mono);
+      font-size: 11px;
+    }
+
+    #recBtn:hover {
+      background: var(--rec);
+      color: #0d0d0f;
+    }
+
+    #recBtn:disabled {
+      opacity: .4;
+      cursor: not-allowed;
+    }
+
+    #clipInfo {
+      font-size: 11px;
+      color: var(--faint);
+      letter-spacing: .05em;
+    }
+
+    /* ---------- rack ---------- */
+    #rack {
+      border-left: 1px solid var(--line);
+      background: var(--panel);
+      padding: 18px 18px 40px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      overflow-y: auto;
+    }
+
+    @media (max-width:900px) {
+      #rack {
+        border-left: none;
+        border-top: 1px solid var(--line);
+      }
+    }
+
+    .section-label {
+      font-size: 10px;
+      letter-spacing: .28em;
+      color: var(--faint);
+      font-weight: 700;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 6px;
+    }
+
+    /* channel strips */
+    .strip {
+      display: grid;
+      grid-template-columns: 64px 1fr 30px;
+      gap: 8px;
+      align-items: center;
+      padding: 7px 8px;
+      background: var(--panel2);
+      border: 1px solid var(--line);
+      margin-top: 6px;
+    }
+
+    .strip .role {
+      font-size: 10px;
+      letter-spacing: .12em;
+      color: var(--dim);
+      font-weight: 700;
+    }
+
+    .strip.loaded .role {
+      color: var(--led);
+    }
+
+    .strip .fileLbl {
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      cursor: pointer;
+      min-width: 0;
+    }
+
+    .strip .fname {
+      font-size: 11px;
+      color: var(--faint);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .strip.loaded .fname {
+      color: var(--ink);
+    }
+
+    .strip input[type=file] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    .meter {
+      height: 3px;
+      background: var(--panel3);
+      position: relative;
+    }
+
+    .meter i {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 0%;
+      background: var(--led);
+      transition: none;
+    }
+
+    .mute {
+      width: 26px;
+      height: 26px;
+      background: var(--panel3);
+      border: 1px solid var(--line);
+      color: var(--faint);
+      font-size: 10px;
+      cursor: pointer;
+      font-family: var(--mono);
+    }
+
+    .mute.on {
+      color: var(--rec);
+      border-color: var(--rec);
+    }
+
+    /* images + title */
+    .imgRow {
+      display: flex;
+      gap: 8px;
+      margin-top: 6px;
+    }
+
+    .imgSlot {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      background: var(--panel2);
+      border: 1px dashed var(--line);
+      padding: 10px 8px;
+      text-align: center;
+      font-size: 10px;
+      letter-spacing: .1em;
+      color: var(--faint);
+      cursor: pointer;
+    }
+
+    .imgSlot.loaded {
+      border-style: solid;
+      border-color: var(--led);
+      color: var(--led);
+    }
+
+    .imgSlot input {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    #titleInput {
+      width: 100%;
+      margin-top: 8px;
+      background: var(--panel2);
+      border: 1px solid var(--line);
+      color: var(--ink);
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 8px 10px;
+      letter-spacing: .06em;
+      outline: none;
+    }
+
+    #titleInput:focus {
+      border-color: var(--led);
+    }
+
+    #titleInput::placeholder {
+      color: var(--faint);
+    }
+
+    /* look switcher + poster fields */
+    #lookRow {
+      display: flex;
+      gap: 8px;
+      margin-top: 6px;
+    }
+
+    #lookRow .tbtn {
+      flex: 1;
+    }
+
+    .ptxt {
+      width: 100%;
+      margin-top: 8px;
+      background: var(--panel2);
+      border: 1px solid var(--line);
+      color: var(--ink);
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 8px 10px;
+      letter-spacing: .06em;
+      outline: none;
+      resize: vertical;
+    }
+
+    .ptxt:focus {
+      border-color: var(--led);
+    }
+
+    .ptxt::placeholder {
+      color: var(--faint);
+    }
+
+    /* knobs */
+    #knobGrid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px 8px;
+      margin-top: 10px;
+      justify-items: center;
+    }
+
+    .knob {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      user-select: none;
+    }
+
+    .knob .dial {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      position: relative;
+      cursor: ns-resize;
+      background:
+        radial-gradient(circle at 35% 30%, #2e2e33 0%, #1a1a1d 55%, #0f0f11 100%);
+      border: 1px solid var(--line);
+      box-shadow: inset 0 2px 4px rgba(255, 255, 255, .05), 0 4px 10px rgba(0, 0, 0, .5);
+    }
+
+    .knob .dial::after {
+      /* tick ring */
+      content: '';
+      position: absolute;
+      inset: -5px;
+      border-radius: 50%;
+      border: 1px solid var(--line);
+      opacity: .5;
+    }
+
+    .knob .ind {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 2px;
+      height: 22px;
+      background: var(--led);
+      transform-origin: 50% 0%;
+      box-shadow: 0 0 6px var(--led-dim);
+    }
+
+    .knob .klabel {
+      font-size: 9px;
+      letter-spacing: .22em;
+      color: var(--dim);
+      font-weight: 700;
+    }
+
+    .knob .kval {
+      font-size: 10px;
+      color: var(--faint);
+      min-height: 12px;
+    }
+
+    .knob:hover .klabel {
+      color: var(--ink);
+    }
+
+    #diceRow {
+      display: flex;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    #diceBtn {
+      flex: 1;
+      background: var(--panel2);
+      border: 1px solid var(--led);
+      color: var(--led);
+      font-family: var(--mono);
+      font-weight: 800;
+      letter-spacing: .22em;
+      padding: 12px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    #diceBtn:hover {
+      background: var(--led);
+      color: #0d0d0f;
+    }
+
+    #diceBtn:active {
+      transform: translateY(1px);
+    }
+
+    #seedTag {
+      align-self: center;
+      font-size: 10px;
+      color: var(--faint);
+      letter-spacing: .08em;
+      padding: 0 6px;
+    }
+
+    .note {
+      font-size: 10px;
+      color: var(--faint);
+      line-height: 1.7;
+      letter-spacing: .03em;
+    }
+
+    .note b {
+      color: var(--dim);
+      font-weight: 700;
+    }
+  </style>
 </head>
+
 <body>
 
-<header>
-  <div class="wordmark">STEM<span class="v">VIS</span></div>
-  <div class="tagline">stem-reactive video unit · v1</div>
-  <div id="status">load stems to begin</div>
-</header>
+  <header>
+    <div class="wordmark">STEM<span class="v">VIS</span></div>
+    <div class="tagline">stem-reactive video unit · v1</div>
+    <div id="status">load stems to begin</div>
+  </header>
 
-<main>
-  <!-- ================= STAGE ================= -->
-  <section id="stage">
-    <div id="canvasWrap">
-      <canvas id="viz" width="720" height="1280"></canvas>
-      <div id="recDot"></div>
-    </div>
-
-    <div id="transport">
-      <div id="timeline">
-        <button id="playBtn" title="space">►</button>
-        <input id="seek" type="range" min="0" max="100" step="0.01" value="0">
-        <div id="clock">0:00 / 0:00</div>
+  <main>
+    <!-- ================= STAGE ================= -->
+    <section id="stage">
+      <div id="canvasWrap">
+        <canvas id="viz" width="720" height="1280"></canvas>
+        <div id="recDot"></div>
       </div>
-      <div id="clipRow">
-        <button class="tbtn" id="setInBtn" title="mark clip start at playhead">SET IN</button>
-        <button class="tbtn lenBtn active" data-len="15">15s</button>
-        <button class="tbtn lenBtn" data-len="30">30s</button>
-        <button class="tbtn lenBtn" data-len="60">60s</button>
-        <button class="tbtn" id="loopBtn" title="loop the clip region while you jam knobs">LOOP</button>
-        <span id="clipInfo">in 0:00 · 15s</span>
-        <span class="spacer"></span>
-        <button class="tbtn" id="resBtn" title="recording resolution">720p</button>
-        <button id="recBtn">● REC</button>
+
+      <div id="transport">
+        <div id="timeline">
+          <button id="playBtn" title="space">►</button>
+          <input id="seek" type="range" min="0" max="100" step="0.01" value="0">
+          <div id="clock">0:00 / 0:00</div>
+        </div>
+        <div id="clipRow">
+          <button class="tbtn" id="setInBtn" title="mark clip start at playhead">SET IN</button>
+          <button class="tbtn lenBtn active" data-len="15">15s</button>
+          <button class="tbtn lenBtn" data-len="30">30s</button>
+          <button class="tbtn lenBtn" data-len="60">60s</button>
+          <button class="tbtn" id="loopBtn" title="loop the clip region while you jam knobs">LOOP</button>
+          <span id="clipInfo">in 0:00 · 15s</span>
+          <span class="spacer"></span>
+          <button class="tbtn" id="resBtn" title="recording resolution">720p</button>
+          <button id="recBtn">● REC</button>
+        </div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <!-- ================= RACK ================= -->
-  <aside id="rack">
-    <div>
-      <div class="section-label">CHANNELS — one audio file per element</div>
-      <div id="strips"></div>
-    </div>
-
-    <div>
-      <div class="section-label">VISUAL ASSETS</div>
-      <div class="imgRow">
-        <label class="imgSlot" id="artSlot">CENTER ART<input type="file" id="artFile" accept="image/*"></label>
-        <label class="imgSlot" id="bgSlot">BACKGROUND<input type="file" id="bgFile" accept="image/*"></label>
+    <!-- ================= RACK ================= -->
+    <aside id="rack">
+      <div>
+        <div class="section-label">CHANNELS — one audio file per element</div>
+        <div id="strips"></div>
       </div>
-      <input id="titleInput" type="text" maxlength="48" placeholder="TITLE OVERLAY — e.g. artist · track name" spellcheck="false">
-    </div>
 
-    <div>
-      <div class="section-label">MACROS — drag knobs vertically</div>
-      <div id="knobGrid"></div>
-      <div id="diceRow">
-        <button id="diceBtn">⟳ DICE — new arrangement</button>
-        <span id="seedTag"></span>
+      <div>
+        <div class="section-label">LOOK — visual module</div>
+        <div id="lookRow">
+          <button class="tbtn lookBtn active" data-look="kinetic">KINETIC</button>
+          <button class="tbtn lookBtn" data-look="orbit">ORBIT</button>
+          <button class="tbtn lookBtn" data-look="poster">POSTER</button>
+        </div>
       </div>
-    </div>
 
-    <div class="note">
-      <b>flow:</b> export stems from FL (File → Export → split mixer tracks, or solo-bounce each group) →
-      load them into channels → hit play → DICE + knobs until it feels right → SET IN at the hook → REC.
-      each channel drives its own layer: KICK punches the frame, BASS glows the floor,
-      CLAP flashes, HATS shimmer up top, CHORDS wash the background,
-      ARPS spawn shapes pitched high→top / low→bottom, VOX drives the center ring or your art,
-      FX triggers glitch. keep this tab visible while recording — capture is real-time.
-    </div>
-  </aside>
-</main>
+      <div>
+        <div class="section-label">VISUAL ASSETS</div>
+        <div class="imgRow">
+          <label class="imgSlot" id="artSlot">CENTER ART<input type="file" id="artFile" accept="image/*"></label>
+          <label class="imgSlot" id="bgSlot">BACKGROUND<input type="file" id="bgFile" accept="image/*"></label>
+        </div>
+        <input id="titleInput" type="text" maxlength="48" placeholder="TITLE OVERLAY — e.g. artist · track name"
+          spellcheck="false">
+        <div class="imgRow">
+          <label class="imgSlot" id="headFontSlot">HEADLINE FONT<input type="file" id="headFontFile"
+              accept=".ttf,.otf,.woff,.woff2"></label>
+          <label class="imgSlot" id="scriptFontSlot">SCRIPT FONT<input type="file" id="scriptFontFile"
+              accept=".ttf,.otf,.woff,.woff2"></label>
+        </div>
+        <div id="kineticPanel">
+          <textarea class="ptxt" id="wordsInput" rows="3" maxlength="400"
+            placeholder="WORDS — one per line or comma separated; each cut picks one (timed lyrics coming later)"
+            spellcheck="false"></textarea>
+        </div>
+        <div id="posterPanel" style="display:none">
+          <input class="ptxt" id="pHeadline" type="text" maxlength="24"
+            placeholder="HEADLINE — the huge word, e.g. LOVE" spellcheck="false">
+          <input class="ptxt" id="pKicker" type="text" maxlength="64"
+            placeholder="KICKER — small words, comma separated: the, cost, of" spellcheck="false">
+          <textarea class="ptxt" id="pQuote" rows="3" maxlength="240"
+            placeholder="QUOTE / LYRIC — script text near the bottom" spellcheck="false"></textarea>
+          <input class="ptxt" id="pFooter" type="text" maxlength="64"
+            placeholder="FOOTER — left · right, e.g. Fyodor · Dostoevsky" spellcheck="false">
+        </div>
+      </div>
 
-<script>
-/* =====================================================================
-   STEMVIS v1 — per-stem audio-reactive video generator
-   architecture: WebAudio analysers (1 per stem) → feature extraction
-   (envelope / onset / spectral centroid) → layered canvas renderer
-   driven by 6 macro knobs + a seeded RNG → MediaRecorder capture.
-   ===================================================================== */
-'use strict';
+      <div>
+        <div class="section-label">MACROS — drag knobs vertically</div>
+        <div id="knobGrid"></div>
+        <div id="diceRow">
+          <button id="diceBtn">⟳ DICE — new arrangement</button>
+          <span id="seedTag"></span>
+        </div>
+      </div>
 
-/* ---------- utils ---------- */
-const $ = s => document.querySelector(s);
-const clamp = (v,a,b) => v<a?a:(v>b?b:v);
-const lerp = (a,b,t) => a+(b-a)*t;
-function mulberry32(seed){
-  return function(){
-    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
-    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
-    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-    return ((t ^ t >>> 14) >>> 0) / 4294967296;
-  };
-}
-const fmtT = s => { s=Math.max(0,s); const m=Math.floor(s/60), r=Math.floor(s%60); return m+':'+String(r).padStart(2,'0'); };
+      <div class="note">
+        <b>flow:</b> export stems from FL (File → Export → split mixer tracks, or solo-bounce each group) →
+        load them into channels → play → DICE + knobs until it feels right → SET IN at the hook → REC.
+        each channel drives its own layer: KICK punches the frame, BASS glows the floor,
+        CLAP flashes, HATS shimmer up top, CHORDS wash the background,
+        ARPS spawn shapes pitched high→top / low→bottom, VOX drives the center ring or your art,
+        FX triggers glitch. keep this tab visible while recording — capture is real-time.
+        <b>LOOK</b> switches the whole visual language. <b>KINETIC</b> hard-cuts between seeded
+        type/image shots on the kicks — CHAOS sets the cut rate (every 8 kicks → every kick),
+        ENERGY adds strobe inverts, WORDS feeds the cuts. ORBIT is the abstract visualizer.
+        POSTER is a still editorial layout. load your own .ttf/.otf font files for either.
+      </div>
+    </aside>
+  </main>
 
-/* ---------- state ---------- */
-const ROLES = [
-  {key:'kick',   label:'KICK'},
-  {key:'bass',   label:'BASS'},
-  {key:'clap',   label:'CLAP'},
-  {key:'hats',   label:'HATS'},
-  {key:'chords', label:'CHORDS'},
-  {key:'arps',   label:'ARPS'},
-  {key:'vox',    label:'VOX'},
-  {key:'fx',     label:'FX'},
-];
-let actx = null, masterGain = null, recDest = null;
-const stems = {};           // key → {buffer, gain, analyser, timeData, freqData, env, prevEnv, onset, centroid, mute, name}
-let duration = 0;
-let playing = false, startCtxTime = 0, startOffset = 0;
-let clipIn = 0, clipLen = 15, loopClip = false;
-let recording = false, recorder = null, recChunks = [], recMime = '';
-let recW = 720, recH = 1280, hiRes = false;
+  <script>
+    /* =====================================================================
+       STEMVIS v1 — per-stem audio-reactive video generator
+       architecture: WebAudio analysers (1 per stem) → feature extraction
+       (envelope / onset / spectral centroid) → layered canvas renderer
+       driven by 6 macro knobs + a seeded RNG → MediaRecorder capture.
+       ===================================================================== */
+    'use strict';
 
-const params = { energy:.6, spread:.55, chaos:.35, hue:.58, style:.5, drift:.4 };
-let seed = (Math.random()*1e9)|0;
-let rng = mulberry32(seed);
-
-/* layout objects regenerated on dice */
-let blobs = [], anchors = [], anchorIdx = 0;
-function reseed(newSeed){
-  seed = newSeed===undefined ? (Math.random()*1e9)|0 : newSeed;
-  rng = mulberry32(seed);
-  blobs = [];
-  const nB = 3 + (rng()*3|0);
-  for(let i=0;i<nB;i++) blobs.push({
-    x:rng()*2-1, y:rng()*2-1, r:.30+rng()*.45,
-    spd:.05+rng()*.25, ph:rng()*Math.PI*2, hueOff:(rng()*140-70), dirx:rng()<.5?-1:1
-  });
-  anchors = [];
-  const nA = 5 + (rng()*4|0);
-  for(let i=0;i<nA;i++) anchors.push({x:rng()*2-1, y:rng()*2-1});
-  anchorIdx = 0;
-  $('#seedTag').textContent = 'seed '+seed.toString(36);
-}
-reseed();
-
-/* ---------- audio engine ---------- */
-function ensureCtx(){
-  if(actx) return;
-  actx = new (window.AudioContext||window.webkitAudioContext)();
-  masterGain = actx.createGain();
-  masterGain.connect(actx.destination);
-  recDest = actx.createMediaStreamDestination();
-  masterGain.connect(recDest);
-}
-async function loadStem(key, file, stripEl){
-  ensureCtx();
-  setStatus('decoding '+file.name+' …');
-  const buf = await file.arrayBuffer();
-  let audio;
-  try{ audio = await actx.decodeAudioData(buf); }
-  catch(e){ setStatus('could not decode '+file.name, 'rec'); return; }
-  const wasPlaying = playing; if(playing) stopAll();
-  const s = stems[key] || {};
-  s.buffer = audio; s.name = file.name; s.mute = s.mute||false;
-  s.gain = actx.createGain();
-  s.analyser = actx.createAnalyser();
-  s.analyser.fftSize = 1024; s.analyser.smoothingTimeConstant = .5;
-  s.timeData = new Float32Array(s.analyser.fftSize);
-  s.freqData = new Uint8Array(s.analyser.frequencyBinCount);
-  s.env = 0; s.prevRms = 0; s.peak = 0; s.onset = false; s.lastOnsetT = 0; s.centroid = .5;
-  s.gain.connect(s.analyser); s.analyser.connect(masterGain);
-  s.gain.gain.value = s.mute ? 0 : 1;
-  stems[key] = s;
-  duration = Math.max(...Object.values(stems).map(x=>x.buffer?x.buffer.duration:0));
-  $('#seek').max = duration;
-  stripEl.classList.add('loaded');
-  stripEl.querySelector('.fname').textContent = file.name;
-  setStatus(file.name+' loaded → '+key.toUpperCase(), 'ok');
-  updateClock();
-  if(wasPlaying) playAll(startOffset);
-}
-function playAll(offset){
-  ensureCtx();
-  if(actx.state==='suspended') actx.resume();
-  const loaded = Object.values(stems).filter(s=>s.buffer);
-  if(!loaded.length){ setStatus('load at least one stem first','rec'); return; }
-  offset = clamp(offset||0, 0, Math.max(0,duration-.05));
-  for(const s of loaded){
-    s.src = actx.createBufferSource();
-    s.src.buffer = s.buffer;
-    s.src.connect(s.gain);
-    if(offset < s.buffer.duration) s.src.start(0, offset);
-  }
-  startCtxTime = actx.currentTime; startOffset = offset;
-  playing = true; $('#playBtn').textContent='❚❚';
-}
-function stopAll(){
-  for(const s of Object.values(stems)){
-    if(s.src){ try{s.src.stop();}catch(e){} s.src.disconnect(); s.src=null; }
-  }
-  playing = false; $('#playBtn').textContent='►';
-}
-function playhead(){
-  return playing ? startOffset + (actx.currentTime - startCtxTime) : startOffset;
-}
-function seekTo(t){
-  const was = playing; stopAll();
-  startOffset = clamp(t,0,duration);
-  if(was) playAll(startOffset);
-}
-
-/* ---------- feature extraction ---------- */
-function analyse(dt){
-  const now = performance.now()/1000;
-  for(const key of Object.keys(stems)){
-    const s = stems[key];
-    if(!s.buffer || !s.analyser){ continue; }
-    s.analyser.getFloatTimeDomainData(s.timeData);
-    let sum=0;
-    for(let i=0;i<s.timeData.length;i+=2) sum += s.timeData[i]*s.timeData[i];
-    const rms = Math.sqrt(sum/(s.timeData.length/2));
-    // running peak (halves every ~2.5s) normalises per-stem loudness → 0..1
-    s.peak = Math.max(s.peak * Math.pow(.5, dt/2.5), rms);
-    const nrm = s.peak > .006 ? clamp(rms/s.peak, 0, 1) : 0;
-    // envelope: instant attack, smooth release
-    s.env = nrm > s.env ? nrm : lerp(s.env, nrm, 1-Math.pow(.001, dt*3));
-    // onset: relative jump vs recent level + refractory window
-    s.onset = false;
-    const jump = nrm - s.prevRms;
-    if(jump > 0.2 && nrm > 0.3 && (now - s.lastOnsetT) > 0.085){
-      s.onset = true; s.lastOnsetT = now;
+    /* ---------- utils ---------- */
+    const $ = s => document.querySelector(s);
+    const clamp = (v, a, b) => v < a ? a : (v > b ? b : v);
+    const lerp = (a, b, t) => a + (b - a) * t;
+    function mulberry32(seed) {
+      return function () {
+        seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+        let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      };
     }
-    s.prevRms = lerp(s.prevRms, nrm, .55);
-    // spectral centroid (brightness / rough pitch height)
-    s.analyser.getByteFrequencyData(s.freqData);
-    let num=0, den=0;
-    const N = s.freqData.length;
-    for(let i=2;i<N;i++){ num += i*s.freqData[i]; den += s.freqData[i]; }
-    if(den>40) s.centroid = lerp(s.centroid, clamp((num/den)/(N*.45),0,1), .3);
-  }
-}
-const env = key => (stems[key] && !stems[key].mute) ? stems[key].env : 0;
-const hit = key => (stems[key] && !stems[key].mute) ? stems[key].onset : false;
+    const fmtT = s => { s = Math.max(0, s); const m = Math.floor(s / 60), r = Math.floor(s % 60); return m + ':' + String(r).padStart(2, '0'); };
 
-/* ---------- renderer ---------- */
-const cv = $('#viz'), ctx2d = cv.getContext('2d', {alpha:false});
-let particles = [], rings = [], sparks = [], punch = 0, glitch = 0, clapFlash = 0, tGlobal = 0, lastFrame = performance.now();
-let artImg = null, bgImg = null;
+    /* ---------- state ---------- */
+    const ROLES = [
+      { key: 'kick', label: 'KICK' },
+      { key: 'bass', label: 'BASS' },
+      { key: 'clap', label: 'CLAP' },
+      { key: 'hats', label: 'HATS' },
+      { key: 'chords', label: 'CHORDS' },
+      { key: 'arps', label: 'ARPS' },
+      { key: 'vox', label: 'VOX' },
+      { key: 'fx', label: 'FX' },
+    ];
+    let actx = null, masterGain = null, recDest = null;
+    const stems = {};           // key → {buffer, gain, analyser, timeData, freqData, env, prevEnv, onset, centroid, mute, name}
+    let duration = 0;
+    let playing = false, startCtxTime = 0, startOffset = 0;
+    let clipIn = 0, clipLen = 15, loopClip = false;
+    let recording = false, recorder = null, recChunks = [], recMime = '';
+    let recW = 720, recH = 1280, hiRes = false;
 
-/* grain texture */
-const grainCv = document.createElement('canvas'); grainCv.width=grainCv.height=140;
-(function(){
-  const g = grainCv.getContext('2d'), id = g.createImageData(140,140);
-  for(let i=0;i<id.data.length;i+=4){ const v = 118+Math.random()*70|0; id.data[i]=id.data[i+1]=id.data[i+2]=v; id.data[i+3]=255; }
-  g.putImageData(id,0,0);
-})();
+    const params = { energy: .6, spread: .55, chaos: .35, hue: .58, style: .5, drift: .4 };
+    let look = 'kinetic';       // active visual module: 'kinetic' | 'orbit' | 'poster'
+    let seed = (Math.random() * 1e9) | 0;
+    let rng = mulberry32(seed);
 
-function baseHue(){ return params.hue*360; }
-function spawnParticle(centroid, strength){
-  const W=cv.width, H=cv.height, cx=W/2, cy=H/2;
-  const a = anchors[anchorIdx++ % anchors.length];
-  const jit = params.chaos;
-  const ux = clamp(a.x + (rng()*2-1)*jit*.8, -1, 1);
-  // pitch mapping: bright/high → top of frame, blended with the seeded anchor
-  const py = lerp(a.y, (1-centroid)*1.7-0.85, .65);
-  const uy = clamp(py + (rng()*2-1)*jit*.4, -1, 1);
-  const x = cx + ux*params.spread*W*.48;
-  const y = cy + uy*params.spread*H*.44;
-  const sp = (1.4+rng()*3.4) * (0.5+params.energy*1.6) * (0.7+strength*4);
-  const ang = rng()*Math.PI*2;
-  const shapes = params.style<0.34 ? ['line','tri'] : params.style<0.67 ? ['circle','square','tri'] : ['circle','circle','square'];
-  particles.push({
-    x,y, vx:Math.cos(ang)*sp, vy:Math.sin(ang)*sp - params.energy*1.2,
-    life:1, decay:.012+rng()*.02, size:(4+rng()*14)*(0.6+strength*3),
-    shape:shapes[(rng()*shapes.length)|0],
-    hue:baseHue()+150+(rng()*80-40), rot:rng()*Math.PI, vr:(rng()-.5)*.2
-  });
-  if(particles.length>420) particles.splice(0, particles.length-420);
-}
-function drawFrame(dt){
-  const W=cv.width, H=cv.height, cx=W/2, cy=H/2, mn=Math.min(W,H);
-  tGlobal += dt * (0.4 + params.drift*1.4);
-
-  /* triggers */
-  if(hit('kick')){ punch = 1; rings.push({age:0}); }
-  punch = Math.max(0, punch - dt*4.5);
-  if(hit('clap')) clapFlash = 1;
-  clapFlash = Math.max(0, clapFlash - dt*7);
-  if(hit('hats')){
-    const hE = env('hats');
-    const n = 3 + (hE*22|0);
-    for(let i=0;i<n;i++) sparks.push({
-      x:Math.random()*W, y:Math.random()*H*.55,
-      life:1, size:1+Math.random()*2.5*(1+hE*3)
-    });
-    if(sparks.length>240) sparks.splice(0, sparks.length-240);
-  }
-  const fxE = env('fx');
-  if(hit('fx')) glitch = Math.min(1, glitch + .55 + fxE*2);
-  if(rng() < 0.006*params.chaos) glitch = Math.min(1, glitch+.3);   // chaos micro-glitch
-  glitch *= Math.pow(.02, dt);
-  if(hit('arps')) spawnParticle(stems.arps.centroid, env('arps'));
-  if(hit('vox') && params.style>0.5) spawnParticle(stems.vox.centroid, env('vox')*.6);
-
-  /* base */
-  const bh = baseHue();
-  const g0 = ctx2d.createLinearGradient(0,0,0,H);
-  g0.addColorStop(0, `hsl(${bh},22%,${5+params.style*3}%)`);
-  g0.addColorStop(1, `hsl(${(bh+40)%360},26%,3%)`);
-  ctx2d.fillStyle = g0; ctx2d.fillRect(0,0,W,H);
-
-  /* world transform: kick punch zoom + chaos shake */
-  const zoom = 1 + punch*.055*(.4+params.energy);
-  const shX = (Math.random()-.5)*punch*16*params.chaos;
-  const shY = (Math.random()-.5)*punch*16*params.chaos;
-  ctx2d.save();
-  ctx2d.translate(cx+shX, cy+shY); ctx2d.scale(zoom,zoom); ctx2d.translate(-cx,-cy);
-
-  /* background image */
-  if(bgImg){
-    const s = Math.max(W/bgImg.width, H/bgImg.height)*1.14*(1+env('chords')*.05);
-    const iw = bgImg.width*s, ih = bgImg.height*s;
-    ctx2d.globalAlpha = .34;
-    ctx2d.drawImage(bgImg, cx-iw/2 + Math.sin(tGlobal*.3)*8*params.chaos, cy-ih/2, iw, ih);
-    ctx2d.globalAlpha = 1;
-  }
-
-  /* BASS → low-end floor glow */
-  const bE = env('bass');
-  if(bE > .01){
-    const gB = ctx2d.createLinearGradient(0,H*.5,0,H);
-    gB.addColorStop(0, `hsla(${(bh+25)%360},70%,45%,0)`);
-    gB.addColorStop(1, `hsla(${(bh+25)%360},70%,45%,${clamp(bE*(.6+params.energy),0,.55)})`);
-    ctx2d.fillStyle = gB; ctx2d.fillRect(0,H*.5,W,H*.5);
-  }
-
-  /* CHORDS → gradient blobs */
-  const chE = env('chords');
-  ctx2d.globalCompositeOperation = params.style>0.55 ? 'lighter' : 'source-over';
-  for(const b of blobs){
-    const bx = cx + (b.x + Math.sin(tGlobal*b.spd+b.ph)*.25*params.chaos*b.dirx) * params.spread * W*.5;
-    const by = cy + (b.y + Math.cos(tGlobal*b.spd*.8+b.ph)*.2*params.chaos) * params.spread * H*.5;
-    const rad = b.r*mn*(.55 + chE*(1.1+params.energy));
-    const gr = ctx2d.createRadialGradient(bx,by,0,bx,by,Math.max(rad,1));
-    const hue = (bh + b.hueOff + 360)%360;
-    const alpha = .10 + chE*.5*(.5+params.energy);
-    gr.addColorStop(0, `hsla(${hue},${55+params.style*35}%,${38+params.style*18}%,${clamp(alpha,0,.8)})`);
-    gr.addColorStop(1, `hsla(${hue},60%,30%,0)`);
-    ctx2d.fillStyle = gr;
-    ctx2d.beginPath(); ctx2d.arc(bx,by,Math.max(rad,1),0,Math.PI*2); ctx2d.fill();
-  }
-  ctx2d.globalCompositeOperation = 'source-over';
-
-  /* KICK → expanding rings */
-  for(const r of rings){
-    r.age += dt;
-    const rad = r.age * mn * (1.1+params.energy*1.6);
-    const a = clamp(1 - r.age*1.5, 0, 1);
-    if(a<=0) continue;
-    ctx2d.strokeStyle = `hsla(${bh},20%,88%,${a*.6})`;
-    ctx2d.lineWidth = 2 + 5*params.energy*a;
-    ctx2d.beginPath(); ctx2d.arc(cx,cy,rad,0,Math.PI*2); ctx2d.stroke();
-  }
-  rings = rings.filter(r=>r.age<0.8);
-
-  /* ARPS → particles */
-  const glow = params.style>0.55 ? 26*(params.style-.5)*2 : 0;
-  for(const p of particles){
-    p.x += p.vx*(dt*60)*(.4+params.energy); p.y += p.vy*(dt*60)*(.4+params.energy);
-    p.vx *= .965; p.vy = p.vy*.965 + .02;
-    p.rot += p.vr; p.life -= p.decay*(dt*60);
-    if(p.life<=0) continue;
-    const a = clamp(p.life,0,1);
-    ctx2d.save();
-    ctx2d.translate(p.x,p.y); ctx2d.rotate(p.rot);
-    ctx2d.shadowBlur = glow; ctx2d.shadowColor = `hsla(${p.hue},90%,60%,${a})`;
-    const col = `hsla(${p.hue},${70+params.style*25}%,${58+params.style*12}%,${a})`;
-    const sz = p.size*(.5+a*.5);
-    if(params.style<0.34){ ctx2d.strokeStyle=col; ctx2d.lineWidth=1.6; }
-    else { ctx2d.fillStyle=col; }
-    ctx2d.beginPath();
-    if(p.shape==='circle'){ ctx2d.arc(0,0,sz*.5,0,Math.PI*2); }
-    else if(p.shape==='square'){ ctx2d.rect(-sz*.5,-sz*.5,sz,sz); }
-    else if(p.shape==='tri'){ ctx2d.moveTo(0,-sz*.6); ctx2d.lineTo(sz*.55,sz*.45); ctx2d.lineTo(-sz*.55,sz*.45); ctx2d.closePath(); }
-    else { ctx2d.moveTo(-sz,0); ctx2d.lineTo(sz,0); }
-    params.style<0.34 ? ctx2d.stroke() : ctx2d.fill();
-    ctx2d.restore();
-  }
-  particles = particles.filter(p=>p.life>0 && p.y<H+60 && p.x>-60 && p.x<W+60);
-
-  /* HATS → top-frame shimmer sparks */
-  for(const sp of sparks){
-    sp.life -= dt*3.4;
-    if(sp.life<=0) continue;
-    ctx2d.fillStyle = `hsla(${bh},20%,95%,${sp.life*.75})`;
-    ctx2d.fillRect(sp.x, sp.y, sp.size, sp.size);
-  }
-  sparks = sparks.filter(sp=>sp.life>0);
-
-  /* VOX → center art pulse and/or waveform ring */
-  const vE = env('vox');
-  const artScalePulse = 1 + vE*.16*(.5+params.energy) + punch*.04;
-  if(artImg){
-    const base = mn*.42*(0.75+params.spread*.35);
-    const s = base/Math.max(artImg.width,artImg.height)*artScalePulse;
-    const iw = artImg.width*s, ih = artImg.height*s;
-    ctx2d.save();
-    ctx2d.translate(cx,cy);
-    ctx2d.rotate(Math.sin(tGlobal*.9)*.02*params.chaos);
-    if(params.style>0.5){ ctx2d.shadowBlur = 40*vE*(params.style)*2+8; ctx2d.shadowColor = `hsla(${bh},80%,60%,.8)`; }
-    ctx2d.drawImage(artImg, -iw/2, -ih/2, iw, ih);
-    ctx2d.restore();
-  }
-  if(stems.vox && stems.vox.buffer && !stems.vox.mute){
-    const td = stems.vox.timeData, steps = 140;
-    const R = mn*(artImg? .30 : .22)*(1+vE*.1);
-    ctx2d.save();
-    ctx2d.translate(cx,cy); ctx2d.rotate(tGlobal*.05*params.drift);
-    ctx2d.beginPath();
-    for(let i=0;i<=steps;i++){
-      const idx = (i/steps*(td.length-1))|0;
-      const amp = td[idx]*(mn*.09)*(1+params.energy*1.4);
-      const ang = i/steps*Math.PI*2;
-      const rr = R + amp;
-      const x = Math.cos(ang)*rr, y = Math.sin(ang)*rr;
-      i===0 ? ctx2d.moveTo(x,y) : ctx2d.lineTo(x,y);
+    /* layout objects regenerated on dice */
+    let blobs = [], anchors = [], anchorIdx = 0, posterL = null;
+    let shot = null, shotIdx = 0, kickCount = 0, lastCutReal = 0, cutFlash = 0;   // kinetic shot state
+    function reseed(newSeed) {
+      seed = newSeed === undefined ? (Math.random() * 1e9) | 0 : newSeed;
+      rng = mulberry32(seed);
+      blobs = [];
+      const nB = 3 + (rng() * 3 | 0);
+      for (let i = 0; i < nB; i++) blobs.push({
+        x: rng() * 2 - 1, y: rng() * 2 - 1, r: .30 + rng() * .45,
+        spd: .05 + rng() * .25, ph: rng() * Math.PI * 2, hueOff: (rng() * 140 - 70), dirx: rng() < .5 ? -1 : 1
+      });
+      anchors = [];
+      const nA = 5 + (rng() * 4 | 0);
+      for (let i = 0; i < nA; i++) anchors.push({ x: rng() * 2 - 1, y: rng() * 2 - 1 });
+      anchorIdx = 0;
+      posterL = {
+        headY: .15 + rng() * .12,
+        frame: { x: .5 + (rng() * .14 - .07), y: .47 + rng() * .10, w: .62 + rng() * .28, ar: .8 + rng() * .45, rot: (rng() * 2 - 1) * .035 },
+        quoteY: .72 + rng() * .07,
+        scratches: []
+      };
+      const nS = 5 + (rng() * 9 | 0);
+      for (let i = 0; i < nS; i++) posterL.scratches.push({ x: rng(), y: rng() * .9, len: .08 + rng() * .4, vert: rng() < .65, a: .05 + rng() * .1 });
+      shot = null; shotIdx = 0;   // kinetic re-cuts from the new seed
+      $('#seedTag').textContent = 'seed ' + seed.toString(36);
     }
-    ctx2d.closePath();
-    ctx2d.strokeStyle = `hsla(${(bh+180)%360},70%,72%,${.35+vE*1.2})`;
-    ctx2d.lineWidth = 1.4 + params.style*2.2;
-    if(params.style>0.55){ ctx2d.shadowBlur = 18; ctx2d.shadowColor = `hsla(${(bh+180)%360},90%,60%,.9)`; }
-    ctx2d.stroke();
-    ctx2d.restore();
-  }
-  ctx2d.restore(); /* end world transform */
+    reseed();
 
-  /* CLAP → frame flash */
-  if(clapFlash > .02){
-    ctx2d.fillStyle = `hsla(${bh},15%,92%,${clapFlash*.14*(.5+params.energy)})`;
-    ctx2d.fillRect(0,0,W,H);
-  }
-
-  /* FX → glitch post-process (slice displacement + ghost) */
-  if(glitch > .03){
-    const n = 2 + (glitch*7)|0;
-    for(let i=0;i<n;i++){
-      const sy = Math.random()*H, sh = 5 + Math.random()*H*.05;
-      const dx = (Math.random()-.5)*W*.12*glitch*(0.5+params.chaos);
-      ctx2d.drawImage(cv, 0,sy,W,sh, dx,sy,W,sh);
+    /* ---------- audio engine ---------- */
+    function ensureCtx() {
+      if (actx) return;
+      actx = new (window.AudioContext || window.webkitAudioContext)();
+      masterGain = actx.createGain();
+      masterGain.connect(actx.destination);
+      recDest = actx.createMediaStreamDestination();
+      masterGain.connect(recDest);
     }
-    ctx2d.globalAlpha = .16*glitch; ctx2d.globalCompositeOperation='lighter';
-    ctx2d.drawImage(cv, glitch*10*(params.chaos+.3), 0);
-    ctx2d.globalAlpha = 1; ctx2d.globalCompositeOperation='source-over';
-  }
+    async function loadStem(key, file, stripEl) {
+      ensureCtx();
+      setStatus('decoding ' + file.name + ' …');
+      const buf = await file.arrayBuffer();
+      let audio;
+      try { audio = await actx.decodeAudioData(buf); }
+      catch (e) { setStatus('could not decode ' + file.name, 'rec'); return; }
+      const wasPlaying = playing; if (playing) stopAll();
+      const s = stems[key] || {};
+      s.buffer = audio; s.name = file.name; s.mute = s.mute || false;
+      s.gain = actx.createGain();
+      s.analyser = actx.createAnalyser();
+      s.analyser.fftSize = 1024; s.analyser.smoothingTimeConstant = .5;
+      s.timeData = new Float32Array(s.analyser.fftSize);
+      s.freqData = new Uint8Array(s.analyser.frequencyBinCount);
+      s.env = 0; s.prevRms = 0; s.peak = 0; s.onset = false; s.lastOnsetT = 0; s.centroid = .5;
+      s.gain.connect(s.analyser); s.analyser.connect(masterGain);
+      s.gain.gain.value = s.mute ? 0 : 1;
+      stems[key] = s;
+      duration = Math.max(...Object.values(stems).map(x => x.buffer ? x.buffer.duration : 0));
+      $('#seek').max = duration;
+      stripEl.classList.add('loaded');
+      stripEl.querySelector('.fname').textContent = file.name;
+      setStatus(file.name + ' loaded → ' + key.toUpperCase(), 'ok');
+      updateClock();
+      if (wasPlaying) playAll(startOffset);
+    }
+    function playAll(offset) {
+      ensureCtx();
+      if (actx.state === 'suspended') actx.resume();
+      const loaded = Object.values(stems).filter(s => s.buffer);
+      if (!loaded.length) { setStatus('load at least one stem first', 'rec'); return; }
+      offset = clamp(offset || 0, 0, Math.max(0, duration - .05));
+      for (const s of loaded) {
+        s.src = actx.createBufferSource();
+        s.src.buffer = s.buffer;
+        s.src.connect(s.gain);
+        if (offset < s.buffer.duration) s.src.start(0, offset);
+      }
+      startCtxTime = actx.currentTime; startOffset = offset;
+      playing = true; $('#playBtn').textContent = '❚❚';
+    }
+    function stopAll() {
+      for (const s of Object.values(stems)) {
+        if (s.src) { try { s.src.stop(); } catch (e) { } s.src.disconnect(); s.src = null; }
+      }
+      playing = false; $('#playBtn').textContent = '►';
+    }
+    function playhead() {
+      return playing ? startOffset + (actx.currentTime - startCtxTime) : startOffset;
+    }
+    function seekTo(t) {
+      const was = playing; stopAll();
+      startOffset = clamp(t, 0, duration);
+      if (was) playAll(startOffset);
+    }
 
-  /* vignette + grain */
-  const vg = ctx2d.createRadialGradient(cx,cy,mn*.35,cx,cy,mn*.95);
-  vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,.42)');
-  ctx2d.fillStyle=vg; ctx2d.fillRect(0,0,W,H);
-  ctx2d.globalAlpha = .05 + params.chaos*.04;
-  ctx2d.globalCompositeOperation = 'overlay';
-  const gx = (Math.random()*140)|0, gy=(Math.random()*140)|0;
-  for(let x=-gx;x<W;x+=140) for(let y=-gy;y<H;y+=140) ctx2d.drawImage(grainCv,x,y);
-  ctx2d.globalAlpha = 1; ctx2d.globalCompositeOperation='source-over';
+    /* ---------- feature extraction ---------- */
+    function analyse(dt) {
+      const now = performance.now() / 1000;
+      for (const key of Object.keys(stems)) {
+        const s = stems[key];
+        if (!s.buffer || !s.analyser) { continue; }
+        s.analyser.getFloatTimeDomainData(s.timeData);
+        let sum = 0;
+        for (let i = 0; i < s.timeData.length; i += 2) sum += s.timeData[i] * s.timeData[i];
+        const rms = Math.sqrt(sum / (s.timeData.length / 2));
+        // running peak (halves every ~2.5s) normalises per-stem loudness → 0..1
+        s.peak = Math.max(s.peak * Math.pow(.5, dt / 2.5), rms);
+        const nrm = s.peak > .006 ? clamp(rms / s.peak, 0, 1) : 0;
+        // envelope: instant attack, smooth release
+        s.env = nrm > s.env ? nrm : lerp(s.env, nrm, 1 - Math.pow(.001, dt * 3));
+        // onset: relative jump vs recent level + refractory window
+        s.onset = false;
+        const jump = nrm - s.prevRms;
+        if (jump > 0.2 && nrm > 0.3 && (now - s.lastOnsetT) > 0.085) {
+          s.onset = true; s.lastOnsetT = now;
+        }
+        s.prevRms = lerp(s.prevRms, nrm, .55);
+        // spectral centroid (brightness / rough pitch height)
+        s.analyser.getByteFrequencyData(s.freqData);
+        let num = 0, den = 0;
+        const N = s.freqData.length;
+        for (let i = 2; i < N; i++) { num += i * s.freqData[i]; den += s.freqData[i]; }
+        if (den > 40) s.centroid = lerp(s.centroid, clamp((num / den) / (N * .45), 0, 1), .3);
+      }
+    }
+    const env = key => (stems[key] && !stems[key].mute) ? stems[key].env : 0;
+    const hit = key => (stems[key] && !stems[key].mute) ? stems[key].onset : false;
 
-  /* title overlay */
-  const title = $('#titleInput').value.trim();
-  if(title){
-    ctx2d.save();
-    ctx2d.font = `700 ${Math.round(mn*.032)}px ${getComputedStyle(document.body).fontFamily}`;
-    ctx2d.textAlign='center';
-    ctx2d.fillStyle = `hsla(${bh},15%,92%,.92)`;
-    ctx2d.shadowColor='rgba(0,0,0,.7)'; ctx2d.shadowBlur=8;
-    const spaced = title.toUpperCase().split('').join('\u200a\u200a');
-    ctx2d.fillText(spaced, cx, H - H*.06 + Math.sin(tGlobal)*2*params.chaos);
-    ctx2d.restore();
-  }
-}
+    /* ---------- renderer ---------- */
+    const cv = $('#viz'), ctx2d = cv.getContext('2d', { alpha: false });
+    let particles = [], rings = [], sparks = [], punch = 0, glitch = 0, clapFlash = 0, tGlobal = 0, lastFrame = performance.now();
+    let artImg = null, bgImg = null;
 
-/* ---------- main loop ---------- */
-function loop(){
-  const now = performance.now();
-  const dt = clamp((now-lastFrame)/1000, 0, .05);
-  lastFrame = now;
-  analyse(dt);
-  drawFrame(dt);
+    /* grain texture */
+    const grainCv = document.createElement('canvas'); grainCv.width = grainCv.height = 140;
+    (function () {
+      const g = grainCv.getContext('2d'), id = g.createImageData(140, 140);
+      for (let i = 0; i < id.data.length; i += 4) { const v = 118 + Math.random() * 70 | 0; id.data[i] = id.data[i + 1] = id.data[i + 2] = v; id.data[i + 3] = 255; }
+      g.putImageData(id, 0, 0);
+    })();
 
-  /* meters + transport */
-  for(const r of ROLES){
-    const s = stems[r.key];
-    if(s && s.meterEl) s.meterEl.style.width = clamp(s.env*110,0,100)+'%';
-  }
-  if(playing){
-    const t = playhead();
-    if(!seekDragging) $('#seek').value = t;
-    updateClock(t);
-    if(loopClip && t >= clipIn + clipLen) seekTo(clipIn);
-    if(t >= duration){ stopAll(); startOffset = 0; }
-    if(recording && t >= clipIn + clipLen) finishRec();
-  }
-  requestAnimationFrame(loop);
-}
-function updateClock(t){
-  $('#clock').textContent = fmtT(t===undefined?startOffset:t)+' / '+fmtT(duration);
-}
+    function baseHue() { return params.hue * 360; }
+    function spawnParticle(centroid, strength) {
+      const W = cv.width, H = cv.height, cx = W / 2, cy = H / 2;
+      const a = anchors[anchorIdx++ % anchors.length];
+      const jit = params.chaos;
+      const ux = clamp(a.x + (rng() * 2 - 1) * jit * .8, -1, 1);
+      // pitch mapping: bright/high → top of frame, blended with the seeded anchor
+      const py = lerp(a.y, (1 - centroid) * 1.7 - 0.85, .65);
+      const uy = clamp(py + (rng() * 2 - 1) * jit * .4, -1, 1);
+      const x = cx + ux * params.spread * W * .48;
+      const y = cy + uy * params.spread * H * .44;
+      const sp = (1.4 + rng() * 3.4) * (0.5 + params.energy * 1.6) * (0.7 + strength * 4);
+      const ang = rng() * Math.PI * 2;
+      const shapes = params.style < 0.34 ? ['line', 'tri'] : params.style < 0.67 ? ['circle', 'square', 'tri'] : ['circle', 'circle', 'square'];
+      particles.push({
+        x, y, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp - params.energy * 1.2,
+        life: 1, decay: .012 + rng() * .02, size: (4 + rng() * 14) * (0.6 + strength * 3),
+        shape: shapes[(rng() * shapes.length) | 0],
+        hue: baseHue() + 150 + (rng() * 80 - 40), rot: rng() * Math.PI, vr: (rng() - .5) * .2
+      });
+      if (particles.length > 420) particles.splice(0, particles.length - 420);
+    }
+    /* ---------- poster look: palette, duotone imagery, user fonts ---------- */
+    let headFontFam = null, scriptFontFam = null, fontN = 0;
+    function hsl2rgb(h, s, l) {
+      s /= 100; l /= 100;
+      const k = n => (n + h / 30) % 12;
+      const a = s * Math.min(l, 1 - l);
+      const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1));
+      return [f(0) * 255, f(8) * 255, f(4) * 255];
+    }
+    const duoCache = new WeakMap();
+    function duotone(img) {
+      // remap image luminance onto a shadow→highlight pair from the hue knob
+      const key = Math.round(params.hue * 24) * 100 + Math.round(params.style * 10);
+      const c = duoCache.get(img);
+      if (c && (c.key === key || performance.now() - c.at < 250)) return c.cv;
+      const bh = baseHue();
+      const lo = hsl2rgb(bh, 45, 8), hi = hsl2rgb(bh, 20 + params.style * 25, 82);
+      const w = Math.min(img.width, 1080), h = Math.round(img.height * w / img.width);
+      const oc = document.createElement('canvas'); oc.width = w; oc.height = h;
+      const g = oc.getContext('2d');
+      g.drawImage(img, 0, 0, w, h);
+      const id = g.getImageData(0, 0, w, h), d = id.data;
+      for (let i = 0; i < d.length; i += 4) {
+        const t = (d[i] * .299 + d[i + 1] * .587 + d[i + 2] * .114) / 255;
+        d[i] = lo[0] + (hi[0] - lo[0]) * t; d[i + 1] = lo[1] + (hi[1] - lo[1]) * t; d[i + 2] = lo[2] + (hi[2] - lo[2]) * t;
+      }
+      g.putImageData(id, 0, 0);
+      duoCache.set(img, { key, cv: oc, at: performance.now() });
+      return oc;
+    }
 
-/* ---------- UI: channel strips ---------- */
-const stripsEl = $('#strips');
-for(const r of ROLES){
-  const div = document.createElement('div');
-  div.className='strip';
-  div.innerHTML = `
+    /* POSTER look — editorial typography over duotone imagery.
+       kick pops the frame · bass breathes the paper · chords wash the headline ·
+       arps jitter the letters · vox lifts the quote · hats flicker dust+scratches */
+    function drawPoster(dt) {
+      const W = cv.width, H = cv.height, cx = W / 2, mn = Math.min(W, H);
+      const bh = baseHue();
+      const bE = env('bass'), chE = env('chords'), vE = env('vox'), aE = env('arps'), hE = env('hats');
+      const inkCol = a => `hsla(${bh},14%,90%,${a})`;
+      const headF = px => `900 ${px}px ${headFontFam ? `"${headFontFam}",` : ''}Didot,"Bodoni 72",Georgia,serif`;
+      const scriptF = px => `400 ${px}px ${scriptFontFam ? `"${scriptFontFam}",` : ''}"Snell Roundhand","Apple Chancery","Brush Script MT",cursive`;
+
+      /* paper — bass breathes the lightness */
+      ctx2d.fillStyle = `hsl(${bh},${18 + params.style * 22}%,${5 + params.style * 4 + bE * 3.5}%)`;
+      ctx2d.fillRect(0, 0, W, H);
+      if (bgImg) {
+        const dc = duotone(bgImg);
+        const s = Math.max(W / dc.width, H / dc.height);
+        ctx2d.globalAlpha = .45;
+        ctx2d.drawImage(dc, cx - dc.width * s / 2, H / 2 - dc.height * s / 2, dc.width * s, dc.height * s);
+        ctx2d.globalAlpha = 1;
+      }
+
+      /* CHORDS → colour wash behind the headline */
+      if (chE > .02) {
+        const gr = ctx2d.createRadialGradient(cx, H * posterL.headY, 0, cx, H * posterL.headY, mn * .75);
+        gr.addColorStop(0, `hsla(${(bh + 30) % 360},50%,60%,${chE * .16 * (.5 + params.energy)})`);
+        gr.addColorStop(1, 'hsla(0,0%,0%,0)');
+        ctx2d.fillStyle = gr; ctx2d.fillRect(0, 0, W, H);
+      }
+
+      ctx2d.save();
+      const z = 1 + punch * .02 * (.4 + params.energy);
+      ctx2d.translate(cx, H / 2); ctx2d.scale(z, z); ctx2d.translate(-cx, -H / 2);
+
+      /* kicker words spread above the headline */
+      const kickerTxt = $('#pKicker').value.trim();
+      if (kickerTxt) {
+        const words = kickerTxt.split(',').map(s => s.trim()).filter(Boolean);
+        ctx2d.font = `italic 400 ${Math.round(mn * .032)}px Georgia,serif`;
+        ctx2d.fillStyle = inkCol(.85);
+        ctx2d.textBaseline = 'alphabetic';
+        const ky = H * (posterL.headY - .075);
+        words.forEach((w, i) => {
+          const t = words.length === 1 ? .5 : i / (words.length - 1);
+          ctx2d.textAlign = t === 0 ? 'left' : (t === 1 ? 'right' : 'center');
+          ctx2d.fillText(w, W * (.07 + t * .86), ky);
+        });
+      }
+
+      /* headline — auto-sized to width, ARPS jitter the letters */
+      const headTxt = ($('#pHeadline').value.trim() || $('#titleInput').value.trim()).toUpperCase();
+      if (headTxt) {
+        let px = 300;
+        ctx2d.font = headF(px);
+        px = Math.min(px * (W * .94) / Math.max(ctx2d.measureText(headTxt).width, 1), H * .28);
+        px *= 1 + punch * .03 * (.4 + params.energy);
+        ctx2d.font = headF(px);
+        ctx2d.textAlign = 'left'; ctx2d.textBaseline = 'middle';
+        let x = cx - ctx2d.measureText(headTxt).width / 2;
+        const jAmp = aE * params.chaos * px * .06;
+        ctx2d.fillStyle = inkCol(.94);
+        for (let i = 0; i < headTxt.length; i++) {
+          ctx2d.fillText(headTxt[i], x, H * posterL.headY + Math.sin(tGlobal * 7 + i * 2.1) * jAmp);
+          x += ctx2d.measureText(headTxt[i]).width;
+        }
+        ctx2d.textBaseline = 'alphabetic';
+      }
+
+      /* framed duotone image (center art) — KICK pops it */
+      if (artImg) {
+        const dc = duotone(artImg);
+        const F = posterL.frame;
+        const fw = W * F.w * (.85 + params.spread * .3), fh = fw * F.ar;
+        ctx2d.save();
+        ctx2d.translate(W * F.x, H * F.y);
+        ctx2d.rotate(F.rot + Math.sin(tGlobal * .7) * .01 * params.chaos);
+        const sc = 1 + punch * .03 * (.4 + params.energy);
+        ctx2d.scale(sc, sc);
+        const s = Math.max(fw / dc.width, fh / dc.height);
+        ctx2d.save();
+        ctx2d.beginPath(); ctx2d.rect(-fw / 2, -fh / 2, fw, fh); ctx2d.clip();
+        ctx2d.drawImage(dc, -dc.width * s / 2, -dc.height * s / 2, dc.width * s, dc.height * s);
+        ctx2d.restore();
+        ctx2d.strokeStyle = inkCol(.5); ctx2d.lineWidth = Math.max(1, mn * .002);
+        ctx2d.strokeRect(-fw / 2, -fh / 2, fw, fh);
+        ctx2d.restore();
+      }
+
+      /* quote — VOX lifts it out of the paper */
+      const quote = $('#pQuote').value.trim();
+      if (quote) {
+        const qpx = mn * .045;
+        ctx2d.font = scriptF(qpx);
+        ctx2d.textAlign = 'center';
+        const words = quote.split(/\s+/), lines = [];
+        let line = '';
+        for (const w of words) {
+          const t = line ? line + ' ' + w : w;
+          if (ctx2d.measureText(t).width > W * .84 && line) { lines.push(line); line = w; }
+          else line = t;
+        }
+        if (line) lines.push(line);
+        ctx2d.fillStyle = inkCol(.3 + vE * .7);
+        lines.forEach((ln, i) => ctx2d.fillText(ln, cx, H * posterL.quoteY + i * qpx * 1.4 + Math.sin(tGlobal * 1.3 + i) * 3 * params.chaos * vE));
+      }
+
+      /* footer corners */
+      const foot = $('#pFooter').value.trim();
+      if (foot) {
+        const parts = foot.split(/[·|,]/).map(s => s.trim()).filter(Boolean);
+        ctx2d.font = scriptF(mn * .026);
+        ctx2d.fillStyle = inkCol(.7);
+        ctx2d.textAlign = 'left'; ctx2d.fillText(parts[0] || '', W * .06, H * .965);
+        if (parts[1]) { ctx2d.textAlign = 'right'; ctx2d.fillText(parts[1], W * .94, H * .965); }
+      }
+      ctx2d.restore(); /* end punch transform */
+
+      /* scratches — CHAOS amount, HATS flicker */
+      ctx2d.strokeStyle = inkCol(1); ctx2d.lineWidth = 1;
+      for (const sc of posterL.scratches) {
+        const flick = .5 + hE * 1.5 + Math.sin(tGlobal * 9 + sc.x * 40) * .3;
+        ctx2d.globalAlpha = clamp(sc.a * flick * (.4 + params.chaos * 1.6), 0, .4);
+        ctx2d.beginPath();
+        if (sc.vert) { ctx2d.moveTo(W * sc.x, H * sc.y); ctx2d.lineTo(W * sc.x + Math.sin(sc.y * 30) * 6, H * (sc.y + sc.len)); }
+        else { ctx2d.moveTo(W * sc.x, H * sc.y); ctx2d.lineTo(W * (sc.x + sc.len), H * sc.y + 4); }
+        ctx2d.stroke();
+      }
+      ctx2d.globalAlpha = 1;
+
+      /* HATS → dust */
+      for (const sp of sparks) {
+        sp.life -= dt * 3.4;
+        if (sp.life <= 0) continue;
+        ctx2d.fillStyle = inkCol(sp.life * .5);
+        ctx2d.fillRect(sp.x, sp.y * 1.6, sp.size * .8, sp.size * .8);
+      }
+      sparks = sparks.filter(sp => sp.life > 0);
+    }
+
+    /* KINETIC look — music-video editing language: the composition hard-CUTS to a
+       new seeded shot every N kicks (CHAOS = cut rate), fx forces a cut.
+       Shot modes: type (one huge word) · stack (word rows fill the frame) ·
+       art (full-bleed duotone image + label) · wall (word grid).
+       kick strobes/pumps · bass slides rows · vox scales type · arps scatter
+       letters · hats stutter the camera · clap flashes · fx glitches. */
+    function kinWords() {
+      const raw = $('#wordsInput').value.trim() || $('#pHeadline').value.trim() || $('#titleInput').value.trim();
+      return raw ? raw.split(/[\n,]/).map(s => s.trim()).filter(Boolean) : ['STEMVIS'];
+    }
+    function newShot() {
+      shotIdx++;
+      const r = mulberry32((seed ^ (shotIdx * 0x9E3779B9)) | 0);
+      const words = kinWords();
+      shot = {
+        mode: ['type', 'stack', 'art', 'wall'][(r() * 4) | 0],
+        word: words[(r() * words.length) | 0],
+        inv: r() < .35,
+        vert: r() < .2,
+        tilt: (r() * 2 - 1) * .07,
+        y: .3 + r() * .4,
+        zDir: r() < .55 ? 1 : -1,
+        bands: r() < .3 ? 2 + (r() * 3 | 0) : 0,
+        bar: r() < .5,
+      };
+      if (shot.mode === 'art' && !artImg) shot.mode = r() < .5 ? 'stack' : 'type';
+      cutFlash = 1; lastCutReal = performance.now() / 1000;
+    }
+    function kinFont(px) { return `900 ${px}px ${headFontFam ? `"${headFontFam}",` : ''}"Arial Black","Helvetica Neue",Helvetica,Impact,sans-serif`; }
+    function fitPx(txt, fontFn, target) {
+      ctx2d.font = fontFn(100);
+      return clamp(100 * target / Math.max(ctx2d.measureText(txt).width, 1), 10, 900);
+    }
+    function drawKinetic(dt) {
+      const W = cv.width, H = cv.height, cx = W / 2, cy = H / 2, mn = Math.min(W, H);
+      const bh = baseHue();
+      const bE = env('bass'), vE = env('vox'), aE = env('arps'), hE = env('hats'), chE = env('chords');
+
+      /* cuts */
+      const nowS = performance.now() / 1000;
+      const cutEvery = params.chaos > .75 ? 1 : params.chaos > .5 ? 2 : params.chaos > .25 ? 4 : 8;
+      if (hit('kick')) { kickCount++; if (kickCount % cutEvery === 0) newShot(); }
+      if (hit('fx')) newShot();
+      if (!shot || nowS - lastCutReal > 9 - 7 * params.chaos) newShot();
+      cutFlash = Math.max(0, cutFlash - dt * 10);
+
+      /* palette — STYLE: b&w ↔ tinted dark ↔ full colour field; shots can invert */
+      const st = params.style;
+      let bg, ink, acc;
+      if (st < .33) { bg = '#0b0b0c'; ink = '#f2efe8'; acc = `hsl(${bh},90%,58%)`; }
+      else if (st < .66) { bg = `hsl(${bh},55%,9%)`; ink = `hsl(${bh},12%,93%)`; acc = `hsl(${(bh + 45) % 360},95%,60%)`; }
+      else { bg = `hsl(${bh},80%,50%)`; ink = '#0c0c0d'; acc = '#f4f1e9'; }
+      if (shot.inv) { const t = bg; bg = ink; ink = t; }
+      ctx2d.fillStyle = bg; ctx2d.fillRect(0, 0, W, H);
+
+      /* camera: per-shot zoom drift + kick pump + hats stutter */
+      const shotAge = nowS - lastCutReal;
+      const cam = (1 + shotAge * .03 * shot.zDir * (.3 + params.drift * 1.4)) * (1 + punch * .14 * (.3 + params.energy * 1.4));
+      const jx = (Math.random() - .5) * hE * params.chaos * 12, jy = (Math.random() - .5) * hE * params.chaos * 12;
+      ctx2d.save();
+      ctx2d.translate(cx + jx, cy + jy); ctx2d.scale(cam, cam); ctx2d.rotate(shot.tilt * params.chaos * 2); ctx2d.translate(-cx, -cy);
+
+      const word = (shot.word || '').toUpperCase();
+      if (shot.mode === 'art' && artImg) {
+        const dc = duotone(artImg);
+        const sc = Math.max(W / dc.width, H / dc.height) * (1.05 + shotAge * .04 * shot.zDir);
+        ctx2d.drawImage(dc, cx - dc.width * sc / 2, cy - dc.height * sc / 2, dc.width * sc, dc.height * sc);
+        if (word) {
+          const fpx = Math.min(fitPx(word, kinFont, W * .8), H * .18) * (1 + vE * .06);
+          ctx2d.font = kinFont(fpx);
+          ctx2d.textAlign = 'center'; ctx2d.textBaseline = 'middle';
+          const tw = ctx2d.measureText(word).width, ly = H * shot.y;
+          if (shot.bar) {
+            ctx2d.fillStyle = acc;
+            ctx2d.fillRect(cx - tw / 2 - mn * .025, ly - fpx * .62, tw + mn * .05, fpx * 1.24);
+            ctx2d.fillStyle = bg;
+          } else ctx2d.fillStyle = ink;
+          ctx2d.fillText(word, cx, ly);
+        }
+      } else if (shot.mode === 'stack' && word) {
+        const fpx = Math.min(fitPx(word, kinFont, W * .92), H * .3) * (1 + vE * .05);
+        ctx2d.font = kinFont(fpx);
+        ctx2d.textAlign = 'center'; ctx2d.textBaseline = 'middle';
+        const rows = Math.ceil(H / (fpx * .98)) + 1;
+        const hot = kickCount % rows;
+        for (let i = 0; i < rows; i++) {
+          const y = (i + .5) * fpx * .98;
+          const off = Math.sin(i * 1.7) * W * .03 + (i % 2 ? 1 : -1) * bE * W * .1 * (.4 + params.energy);
+          if (i === hot) { ctx2d.fillStyle = acc; ctx2d.fillText(word, cx + off, y); }
+          else if (i % 2) { ctx2d.strokeStyle = ink; ctx2d.lineWidth = Math.max(1, fpx * .012); ctx2d.strokeText(word, cx + off, y); }
+          else { ctx2d.fillStyle = ink; ctx2d.fillText(word, cx + off, y); }
+        }
+      } else if (shot.mode === 'wall' && word) {
+        const fpx = mn * .075 * (1 + vE * .1);
+        ctx2d.font = kinFont(fpx);
+        ctx2d.textAlign = 'center'; ctx2d.textBaseline = 'middle';
+        const tw = ctx2d.measureText(word).width;
+        const gw = Math.max(1, Math.ceil(W / (tw + mn * .05))), ch = fpx * 1.5;
+        const gh = Math.ceil(H / ch);
+        const cw = W / gw;
+        const hotI = (kickCount * 7 + shotIdx) % (gw * gh);
+        let n = 0;
+        for (let gy = 0; gy <= gh; gy++) for (let gx = 0; gx < gw; gx++, n++) {
+          const x = cw * (gx + .5) + (gy % 2 ? 1 : -1) * bE * cw * .4, y = ch * (gy + .5);
+          if (n === hotI) {
+            ctx2d.save(); ctx2d.translate(x, y); ctx2d.scale(1 + punch * .5, 1 + punch * .5);
+            ctx2d.fillStyle = acc; ctx2d.fillText(word, 0, 0); ctx2d.restore();
+          } else {
+            ctx2d.globalAlpha = .2 + chE * .55;
+            ctx2d.fillStyle = ink; ctx2d.fillText(word, x, y);
+            ctx2d.globalAlpha = 1;
+          }
+        }
+      } else if (word) { /* type — one huge word */
+        let fpx = Math.min(fitPx(word, kinFont, shot.vert ? H * .85 : W * .94), H * .42);
+        fpx *= 1 + vE * .07 + punch * .05 * params.energy;
+        ctx2d.save();
+        ctx2d.translate(cx, shot.vert ? cy : H * shot.y);
+        if (shot.vert) ctx2d.rotate(-Math.PI / 2);
+        ctx2d.font = kinFont(fpx);
+        ctx2d.textAlign = 'center'; ctx2d.textBaseline = 'middle';
+        for (let e = 3; e >= 1; e--) {   // echo trails on the punch
+          ctx2d.globalAlpha = .1 * e * punch * 3;
+          ctx2d.fillStyle = acc;
+          ctx2d.fillText(word, e * punch * W * .02 * shot.zDir, 0);
+        }
+        ctx2d.globalAlpha = 1;
+        const jA = aE * params.chaos * fpx * .15;   // arps scatter the letters
+        if (jA > fpx * .008) {
+          ctx2d.textAlign = 'left';
+          let x = -ctx2d.measureText(word).width / 2;
+          ctx2d.fillStyle = ink;
+          for (let i = 0; i < word.length; i++) {
+            ctx2d.fillText(word[i], x, Math.sin(tGlobal * 9 + i * 2.3) * jA);
+            x += ctx2d.measureText(word[i]).width;
+          }
+        } else { ctx2d.fillStyle = ink; ctx2d.fillText(word, 0, 0); }
+        ctx2d.restore();
+        if (shot.bar) {   // accent bar rides the bass
+          const bw = W * .5 * (.25 + bE);
+          ctx2d.fillStyle = acc;
+          ctx2d.fillRect(cx - bw / 2, H * shot.y + fpx * .58, bw, mn * .014);
+        }
+      }
+      ctx2d.restore(); /* end camera */
+
+      /* band split shots: offset alternating horizontal slices */
+      if (shot.bands) {
+        const bhh = H / shot.bands;
+        for (let i = 1; i < shot.bands; i += 2) {
+          const off = Math.sin(tGlobal * .8 + i) * W * .02 + bE * W * .06 * ((i % 3) - 1);
+          ctx2d.drawImage(cv, 0, i * bhh, W, bhh, off, i * bhh, W, bhh);
+        }
+      }
+
+      /* chromatic ghost on hits */
+      const gAmt = (punch * .9 + glitch * .7) * (.3 + params.energy);
+      if (gAmt > .12) {
+        const o = gAmt * W * .012;
+        ctx2d.save();
+        ctx2d.globalCompositeOperation = 'lighter'; ctx2d.globalAlpha = .22;
+        ctx2d.filter = 'hue-rotate(100deg) saturate(2.4)';
+        ctx2d.drawImage(cv, o, 0);
+        ctx2d.filter = 'hue-rotate(220deg) saturate(2.4)';
+        ctx2d.drawImage(cv, -o, 0);
+        ctx2d.restore();
+        ctx2d.filter = 'none';
+      }
+
+      /* strobe: full-frame invert on hard kicks (ENERGY) and for ~2 frames on every cut */
+      if ((hit('kick') && params.energy > .55 && Math.random() < params.energy * .7) || cutFlash > .7) {
+        ctx2d.globalCompositeOperation = 'difference';
+        ctx2d.fillStyle = '#fff'; ctx2d.fillRect(0, 0, W, H);
+        ctx2d.globalCompositeOperation = 'source-over';
+      }
+    }
+
+    function drawFrame(dt) {
+      const W = cv.width, H = cv.height, cx = W / 2, cy = H / 2, mn = Math.min(W, H);
+      tGlobal += dt * (0.4 + params.drift * 1.4);
+
+      /* triggers */
+      if (hit('kick')) { punch = 1; rings.push({ age: 0 }); }
+      punch = Math.max(0, punch - dt * 4.5);
+      if (hit('clap')) clapFlash = 1;
+      clapFlash = Math.max(0, clapFlash - dt * 7);
+      if (hit('hats')) {
+        const hE = env('hats');
+        const n = 3 + (hE * 22 | 0);
+        for (let i = 0; i < n; i++) sparks.push({
+          x: Math.random() * W, y: Math.random() * H * .55,
+          life: 1, size: 1 + Math.random() * 2.5 * (1 + hE * 3)
+        });
+        if (sparks.length > 240) sparks.splice(0, sparks.length - 240);
+      }
+      const fxE = env('fx');
+      if (hit('fx')) glitch = Math.min(1, glitch + .55 + fxE * 2);
+      if (rng() < 0.006 * params.chaos) glitch = Math.min(1, glitch + .3);   // chaos micro-glitch
+      glitch *= Math.pow(.02, dt);
+      if (look === 'orbit') {
+        if (hit('arps')) spawnParticle(stems.arps.centroid, env('arps'));
+        if (hit('vox') && params.style > 0.5) spawnParticle(stems.vox.centroid, env('vox') * .6);
+      }
+
+      look === 'poster' ? drawPoster(dt) : look === 'kinetic' ? drawKinetic(dt) : drawOrbit(dt);
+      postFX(dt);
+    }
+
+    /* ORBIT look — the original abstract visualizer */
+    function drawOrbit(dt) {
+      const W = cv.width, H = cv.height, cx = W / 2, cy = H / 2, mn = Math.min(W, H);
+
+      /* base */
+      const bh = baseHue();
+      const g0 = ctx2d.createLinearGradient(0, 0, 0, H);
+      g0.addColorStop(0, `hsl(${bh},22%,${5 + params.style * 3}%)`);
+      g0.addColorStop(1, `hsl(${(bh + 40) % 360},26%,3%)`);
+      ctx2d.fillStyle = g0; ctx2d.fillRect(0, 0, W, H);
+
+      /* world transform: kick punch zoom + chaos shake */
+      const zoom = 1 + punch * .055 * (.4 + params.energy);
+      const shX = (Math.random() - .5) * punch * 16 * params.chaos;
+      const shY = (Math.random() - .5) * punch * 16 * params.chaos;
+      ctx2d.save();
+      ctx2d.translate(cx + shX, cy + shY); ctx2d.scale(zoom, zoom); ctx2d.translate(-cx, -cy);
+
+      /* background image */
+      if (bgImg) {
+        const s = Math.max(W / bgImg.width, H / bgImg.height) * 1.14 * (1 + env('chords') * .05);
+        const iw = bgImg.width * s, ih = bgImg.height * s;
+        ctx2d.globalAlpha = .34;
+        ctx2d.drawImage(bgImg, cx - iw / 2 + Math.sin(tGlobal * .3) * 8 * params.chaos, cy - ih / 2, iw, ih);
+        ctx2d.globalAlpha = 1;
+      }
+
+      /* BASS → low-end floor glow */
+      const bE = env('bass');
+      if (bE > .01) {
+        const gB = ctx2d.createLinearGradient(0, H * .5, 0, H);
+        gB.addColorStop(0, `hsla(${(bh + 25) % 360},70%,45%,0)`);
+        gB.addColorStop(1, `hsla(${(bh + 25) % 360},70%,45%,${clamp(bE * (.6 + params.energy), 0, .55)})`);
+        ctx2d.fillStyle = gB; ctx2d.fillRect(0, H * .5, W, H * .5);
+      }
+
+      /* CHORDS → gradient blobs */
+      const chE = env('chords');
+      ctx2d.globalCompositeOperation = params.style > 0.55 ? 'lighter' : 'source-over';
+      for (const b of blobs) {
+        const bx = cx + (b.x + Math.sin(tGlobal * b.spd + b.ph) * .25 * params.chaos * b.dirx) * params.spread * W * .5;
+        const by = cy + (b.y + Math.cos(tGlobal * b.spd * .8 + b.ph) * .2 * params.chaos) * params.spread * H * .5;
+        const rad = b.r * mn * (.55 + chE * (1.1 + params.energy));
+        const gr = ctx2d.createRadialGradient(bx, by, 0, bx, by, Math.max(rad, 1));
+        const hue = (bh + b.hueOff + 360) % 360;
+        const alpha = .10 + chE * .5 * (.5 + params.energy);
+        gr.addColorStop(0, `hsla(${hue},${55 + params.style * 35}%,${38 + params.style * 18}%,${clamp(alpha, 0, .8)})`);
+        gr.addColorStop(1, `hsla(${hue},60%,30%,0)`);
+        ctx2d.fillStyle = gr;
+        ctx2d.beginPath(); ctx2d.arc(bx, by, Math.max(rad, 1), 0, Math.PI * 2); ctx2d.fill();
+      }
+      ctx2d.globalCompositeOperation = 'source-over';
+
+      /* KICK → expanding rings */
+      for (const r of rings) {
+        r.age += dt;
+        const rad = r.age * mn * (1.1 + params.energy * 1.6);
+        const a = clamp(1 - r.age * 1.5, 0, 1);
+        if (a <= 0) continue;
+        ctx2d.strokeStyle = `hsla(${bh},20%,88%,${a * .6})`;
+        ctx2d.lineWidth = 2 + 5 * params.energy * a;
+        ctx2d.beginPath(); ctx2d.arc(cx, cy, rad, 0, Math.PI * 2); ctx2d.stroke();
+      }
+      rings = rings.filter(r => r.age < 0.8);
+
+      /* ARPS → particles */
+      const glow = params.style > 0.55 ? 26 * (params.style - .5) * 2 : 0;
+      for (const p of particles) {
+        p.x += p.vx * (dt * 60) * (.4 + params.energy); p.y += p.vy * (dt * 60) * (.4 + params.energy);
+        p.vx *= .965; p.vy = p.vy * .965 + .02;
+        p.rot += p.vr; p.life -= p.decay * (dt * 60);
+        if (p.life <= 0) continue;
+        const a = clamp(p.life, 0, 1);
+        ctx2d.save();
+        ctx2d.translate(p.x, p.y); ctx2d.rotate(p.rot);
+        ctx2d.shadowBlur = glow; ctx2d.shadowColor = `hsla(${p.hue},90%,60%,${a})`;
+        const col = `hsla(${p.hue},${70 + params.style * 25}%,${58 + params.style * 12}%,${a})`;
+        const sz = p.size * (.5 + a * .5);
+        if (params.style < 0.34) { ctx2d.strokeStyle = col; ctx2d.lineWidth = 1.6; }
+        else { ctx2d.fillStyle = col; }
+        ctx2d.beginPath();
+        if (p.shape === 'circle') { ctx2d.arc(0, 0, sz * .5, 0, Math.PI * 2); }
+        else if (p.shape === 'square') { ctx2d.rect(-sz * .5, -sz * .5, sz, sz); }
+        else if (p.shape === 'tri') { ctx2d.moveTo(0, -sz * .6); ctx2d.lineTo(sz * .55, sz * .45); ctx2d.lineTo(-sz * .55, sz * .45); ctx2d.closePath(); }
+        else { ctx2d.moveTo(-sz, 0); ctx2d.lineTo(sz, 0); }
+        params.style < 0.34 ? ctx2d.stroke() : ctx2d.fill();
+        ctx2d.restore();
+      }
+      particles = particles.filter(p => p.life > 0 && p.y < H + 60 && p.x > -60 && p.x < W + 60);
+
+      /* HATS → top-frame shimmer sparks */
+      for (const sp of sparks) {
+        sp.life -= dt * 3.4;
+        if (sp.life <= 0) continue;
+        ctx2d.fillStyle = `hsla(${bh},20%,95%,${sp.life * .75})`;
+        ctx2d.fillRect(sp.x, sp.y, sp.size, sp.size);
+      }
+      sparks = sparks.filter(sp => sp.life > 0);
+
+      /* VOX → center art pulse and/or waveform ring */
+      const vE = env('vox');
+      const artScalePulse = 1 + vE * .16 * (.5 + params.energy) + punch * .04;
+      if (artImg) {
+        const base = mn * .42 * (0.75 + params.spread * .35);
+        const s = base / Math.max(artImg.width, artImg.height) * artScalePulse;
+        const iw = artImg.width * s, ih = artImg.height * s;
+        ctx2d.save();
+        ctx2d.translate(cx, cy);
+        ctx2d.rotate(Math.sin(tGlobal * .9) * .02 * params.chaos);
+        if (params.style > 0.5) { ctx2d.shadowBlur = 40 * vE * (params.style) * 2 + 8; ctx2d.shadowColor = `hsla(${bh},80%,60%,.8)`; }
+        ctx2d.drawImage(artImg, -iw / 2, -ih / 2, iw, ih);
+        ctx2d.restore();
+      }
+      if (stems.vox && stems.vox.buffer && !stems.vox.mute) {
+        const td = stems.vox.timeData, steps = 140;
+        const R = mn * (artImg ? .30 : .22) * (1 + vE * .1);
+        ctx2d.save();
+        ctx2d.translate(cx, cy); ctx2d.rotate(tGlobal * .05 * params.drift);
+        ctx2d.beginPath();
+        for (let i = 0; i <= steps; i++) {
+          const idx = (i / steps * (td.length - 1)) | 0;
+          const amp = td[idx] * (mn * .09) * (1 + params.energy * 1.4);
+          const ang = i / steps * Math.PI * 2;
+          const rr = R + amp;
+          const x = Math.cos(ang) * rr, y = Math.sin(ang) * rr;
+          i === 0 ? ctx2d.moveTo(x, y) : ctx2d.lineTo(x, y);
+        }
+        ctx2d.closePath();
+        ctx2d.strokeStyle = `hsla(${(bh + 180) % 360},70%,72%,${.35 + vE * 1.2})`;
+        ctx2d.lineWidth = 1.4 + params.style * 2.2;
+        if (params.style > 0.55) { ctx2d.shadowBlur = 18; ctx2d.shadowColor = `hsla(${(bh + 180) % 360},90%,60%,.9)`; }
+        ctx2d.stroke();
+        ctx2d.restore();
+      }
+      ctx2d.restore(); /* end world transform */
+
+      /* title overlay */
+      const title = $('#titleInput').value.trim();
+      if (title) {
+        ctx2d.save();
+        ctx2d.font = `700 ${Math.round(mn * .032)}px ${getComputedStyle(document.body).fontFamily}`;
+        ctx2d.textAlign = 'center';
+        ctx2d.fillStyle = `hsla(${bh},15%,92%,.92)`;
+        ctx2d.shadowColor = 'rgba(0,0,0,.7)'; ctx2d.shadowBlur = 8;
+        const spaced = title.toUpperCase().split('').join('  ');
+        ctx2d.fillText(spaced, cx, H - H * .06 + Math.sin(tGlobal) * 2 * params.chaos);
+        ctx2d.restore();
+      }
+    }
+
+    /* shared post-process: clap flash, fx glitch, vignette, grain */
+    function postFX(dt) {
+      const W = cv.width, H = cv.height, cx = W / 2, cy = H / 2, mn = Math.min(W, H);
+      const bh = baseHue();
+
+      /* CLAP → frame flash (kinetic hits harder) */
+      if (clapFlash > .02) {
+        ctx2d.fillStyle = `hsla(${bh},15%,92%,${clapFlash * (look === 'kinetic' ? .3 : .14) * (.5 + params.energy)})`;
+        ctx2d.fillRect(0, 0, W, H);
+      }
+
+      /* FX → glitch post-process (slice displacement + ghost) */
+      if (glitch > .03) {
+        const n = 2 + (glitch * 7) | 0;
+        for (let i = 0; i < n; i++) {
+          const sy = Math.random() * H, sh = 5 + Math.random() * H * .05;
+          const dx = (Math.random() - .5) * W * .12 * glitch * (0.5 + params.chaos);
+          ctx2d.drawImage(cv, 0, sy, W, sh, dx, sy, W, sh);
+        }
+        ctx2d.globalAlpha = .16 * glitch; ctx2d.globalCompositeOperation = 'lighter';
+        ctx2d.drawImage(cv, glitch * 10 * (params.chaos + .3), 0);
+        ctx2d.globalAlpha = 1; ctx2d.globalCompositeOperation = 'source-over';
+      }
+
+      /* vignette + grain (poster: light vignette / heavy grain · kinetic: nearly flat) */
+      const vg = ctx2d.createRadialGradient(cx, cy, mn * .35, cx, cy, mn * .95);
+      vg.addColorStop(0, 'rgba(0,0,0,0)');
+      vg.addColorStop(1, look === 'poster' ? 'rgba(0,0,0,.30)' : look === 'kinetic' ? 'rgba(0,0,0,.16)' : 'rgba(0,0,0,.42)');
+      ctx2d.fillStyle = vg; ctx2d.fillRect(0, 0, W, H);
+      ctx2d.globalAlpha = (look === 'poster' ? .09 : look === 'kinetic' ? .06 : .05) + params.chaos * .04;
+      ctx2d.globalCompositeOperation = 'overlay';
+      const gx = (Math.random() * 140) | 0, gy = (Math.random() * 140) | 0;
+      for (let x = -gx; x < W; x += 140) for (let y = -gy; y < H; y += 140) ctx2d.drawImage(grainCv, x, y);
+      ctx2d.globalAlpha = 1; ctx2d.globalCompositeOperation = 'source-over';
+    }
+
+    /* ---------- main loop ---------- */
+    function loop() {
+      const now = performance.now();
+      const dt = clamp((now - lastFrame) / 1000, 0, .05);
+      lastFrame = now;
+      analyse(dt);
+      drawFrame(dt);
+
+      /* meters + transport */
+      for (const r of ROLES) {
+        const s = stems[r.key];
+        if (s && s.meterEl) s.meterEl.style.width = clamp(s.env * 110, 0, 100) + '%';
+      }
+      if (playing) {
+        const t = playhead();
+        if (!seekDragging) $('#seek').value = t;
+        updateClock(t);
+        if (loopClip && t >= clipIn + clipLen) seekTo(clipIn);
+        if (t >= duration) { stopAll(); startOffset = 0; }
+        if (recording && t >= clipIn + clipLen) finishRec();
+      }
+      requestAnimationFrame(loop);
+    }
+    function updateClock(t) {
+      $('#clock').textContent = fmtT(t === undefined ? startOffset : t) + ' / ' + fmtT(duration);
+    }
+
+    /* ---------- UI: channel strips ---------- */
+    const stripsEl = $('#strips');
+    for (const r of ROLES) {
+      const div = document.createElement('div');
+      div.className = 'strip';
+      div.innerHTML = `
     <span class="role">${r.label}</span>
     <label class="fileLbl">
       <span class="fname">— drop ${r.label.toLowerCase()} stem</span>
@@ -683,179 +1505,206 @@ for(const r of ROLES){
       <input type="file" accept="audio/*">
     </label>
     <button class="mute" title="mute">M</button>`;
-  stripsEl.appendChild(div);
-  const input = div.querySelector('input');
-  input.addEventListener('change', e=>{
-    if(e.target.files[0]) loadStem(r.key, e.target.files[0], div);
-  });
-  div.querySelector('.mute').addEventListener('click', ev=>{
-    const s = stems[r.key]; if(!s) return;
-    s.mute = !s.mute;
-    if(s.gain) s.gain.gain.value = s.mute?0:1;
-    ev.target.classList.toggle('on', s.mute);
-  });
-  /* meter ref is attached by the MutationObserver below once the stem finishes decoding */
-}
+      stripsEl.appendChild(div);
+      const input = div.querySelector('input');
+      input.addEventListener('change', e => {
+        if (e.target.files[0]) loadStem(r.key, e.target.files[0], div);
+      });
+      div.querySelector('.mute').addEventListener('click', ev => {
+        const s = stems[r.key]; if (!s) return;
+        s.mute = !s.mute;
+        if (s.gain) s.gain.gain.value = s.mute ? 0 : 1;
+        ev.target.classList.toggle('on', s.mute);
+      });
+      /* meter ref is attached by the MutationObserver below once the stem finishes decoding */
+    }
 
-/* ---------- UI: images + title ---------- */
-function loadImg(file, cb){
-  const url = URL.createObjectURL(file);
-  const img = new Image();
-  img.onload = ()=>cb(img);
-  img.src = url;
-}
-$('#artFile').addEventListener('change', e=>{
-  const f = e.target.files[0]; if(!f) return;
-  loadImg(f, img=>{ artImg = img; $('#artSlot').classList.add('loaded'); $('#artSlot').firstChild.textContent='CENTER ART ✓'; });
-});
-$('#bgFile').addEventListener('change', e=>{
-  const f = e.target.files[0]; if(!f) return;
-  loadImg(f, img=>{ bgImg = img; $('#bgSlot').classList.add('loaded'); $('#bgSlot').firstChild.textContent='BACKGROUND ✓'; });
-});
+    /* ---------- UI: images + title ---------- */
+    function loadImg(file, cb) {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => cb(img);
+      img.src = url;
+    }
+    $('#artFile').addEventListener('change', e => {
+      const f = e.target.files[0]; if (!f) return;
+      loadImg(f, img => { artImg = img; $('#artSlot').classList.add('loaded'); $('#artSlot').firstChild.textContent = 'CENTER ART ✓'; });
+    });
+    $('#bgFile').addEventListener('change', e => {
+      const f = e.target.files[0]; if (!f) return;
+      loadImg(f, img => { bgImg = img; $('#bgSlot').classList.add('loaded'); $('#bgSlot').firstChild.textContent = 'BACKGROUND ✓'; });
+    });
 
-/* ---------- UI: knobs ---------- */
-const KNOBS = [
-  {key:'energy', label:'ENERGY', tip:'motion intensity everywhere'},
-  {key:'spread', label:'SPREAD', tip:'centered ↔ full-frame layout'},
-  {key:'chaos',  label:'CHAOS',  tip:'jitter, drift, glitch probability'},
-  {key:'hue',    label:'HUE',    tip:'base palette rotation'},
-  {key:'style',  label:'STYLE',  tip:'wireframe ↔ solid ↔ neon glow'},
-  {key:'drift',  label:'DRIFT',  tip:'ambient motion speed'},
-];
-const knobGrid = $('#knobGrid');
-for(const k of KNOBS){
-  const el = document.createElement('div');
-  el.className='knob'; el.title=k.tip;
-  el.innerHTML = `<div class="dial"><div class="ind"></div></div>
+    /* ---------- UI: knobs ---------- */
+    const KNOBS = [
+      { key: 'energy', label: 'ENERGY', tip: 'motion intensity everywhere' },
+      { key: 'spread', label: 'SPREAD', tip: 'centered ↔ full-frame layout' },
+      { key: 'chaos', label: 'CHAOS', tip: 'jitter, drift, glitch probability' },
+      { key: 'hue', label: 'HUE', tip: 'base palette rotation' },
+      { key: 'style', label: 'STYLE', tip: 'wireframe ↔ solid ↔ neon glow' },
+      { key: 'drift', label: 'DRIFT', tip: 'ambient motion speed' },
+    ];
+    const knobGrid = $('#knobGrid');
+    for (const k of KNOBS) {
+      const el = document.createElement('div');
+      el.className = 'knob'; el.title = k.tip;
+      el.innerHTML = `<div class="dial"><div class="ind"></div></div>
     <div class="klabel">${k.label}</div><div class="kval"></div>`;
-  knobGrid.appendChild(el);
-  const dial = el.querySelector('.dial'), ind = el.querySelector('.ind'), val = el.querySelector('.kval');
-  const render = ()=>{
-    const deg = -135 + params[k.key]*270;
-    ind.style.transform = `translateX(-50%) rotate(${deg}deg)`;
-    val.textContent = Math.round(params[k.key]*100);
-  };
-  render();
-  let dragging=false, y0=0, v0=0;
-  dial.addEventListener('pointerdown', e=>{
-    dragging=true; y0=e.clientY; v0=params[k.key];
-    dial.setPointerCapture(e.pointerId);
-  });
-  dial.addEventListener('pointermove', e=>{
-    if(!dragging) return;
-    params[k.key] = clamp(v0 + (y0-e.clientY)/160, 0, 1);
-    render();
-  });
-  dial.addEventListener('pointerup', ()=>dragging=false);
-  dial.addEventListener('dblclick', ()=>{ params[k.key]=.5; render(); });
-}
-$('#diceBtn').addEventListener('click', ()=>reseed());
+      knobGrid.appendChild(el);
+      const dial = el.querySelector('.dial'), ind = el.querySelector('.ind'), val = el.querySelector('.kval');
+      const render = () => {
+        const deg = -135 + params[k.key] * 270;
+        ind.style.transform = `translateX(-50%) rotate(${deg}deg)`;
+        val.textContent = Math.round(params[k.key] * 100);
+      };
+      render();
+      let dragging = false, y0 = 0, v0 = 0;
+      dial.addEventListener('pointerdown', e => {
+        dragging = true; y0 = e.clientY; v0 = params[k.key];
+        dial.setPointerCapture(e.pointerId);
+      });
+      dial.addEventListener('pointermove', e => {
+        if (!dragging) return;
+        params[k.key] = clamp(v0 + (y0 - e.clientY) / 160, 0, 1);
+        render();
+      });
+      dial.addEventListener('pointerup', () => dragging = false);
+      dial.addEventListener('dblclick', () => { params[k.key] = .5; render(); });
+    }
+    $('#diceBtn').addEventListener('click', () => reseed());
 
-/* ---------- UI: transport ---------- */
-let seekDragging = false;
-$('#playBtn').addEventListener('click', ()=> playing ? (stopAll(), startOffset=playhead()) : playAll(startOffset));
-window.addEventListener('keydown', e=>{
-  if(e.code==='Space' && document.activeElement!==$('#titleInput')){
-    e.preventDefault();
-    playing ? (startOffset=playhead(), stopAll()) : playAll(startOffset);
-  }
-});
-$('#seek').addEventListener('input', e=>{ seekDragging=true; updateClock(+e.target.value); });
-$('#seek').addEventListener('change', e=>{ seekDragging=false; seekTo(+e.target.value); });
-$('#setInBtn').addEventListener('click', ()=>{
-  clipIn = playhead(); updateClipInfo();
-});
-document.querySelectorAll('.lenBtn').forEach(b=>b.addEventListener('click', ()=>{
-  document.querySelectorAll('.lenBtn').forEach(x=>x.classList.remove('active'));
-  b.classList.add('active');
-  clipLen = +b.dataset.len; updateClipInfo();
-}));
-$('#loopBtn').addEventListener('click', e=>{
-  loopClip = !loopClip; e.target.classList.toggle('active', loopClip);
-});
-$('#resBtn').addEventListener('click', e=>{
-  hiRes = !hiRes;
-  recW = hiRes?1080:720; recH = hiRes?1920:1280;
-  cv.width=recW; cv.height=recH;
-  e.target.textContent = hiRes?'1080p':'720p';
-});
-function updateClipInfo(){
-  $('#clipInfo').textContent = 'in '+fmtT(clipIn)+' · '+clipLen+'s';
-}
+    /* ---------- UI: look switcher + poster fonts ---------- */
+    document.querySelectorAll('.lookBtn').forEach(b => b.addEventListener('click', () => {
+      document.querySelectorAll('.lookBtn').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      look = b.dataset.look;
+      $('#posterPanel').style.display = look === 'poster' ? 'block' : 'none';
+      $('#kineticPanel').style.display = look === 'kinetic' ? 'block' : 'none';
+    }));
+    async function loadFontFile(file, slotEl, label, cb) {
+      try {
+        const data = await file.arrayBuffer();
+        const fam = 'user-font-' + (++fontN);
+        const ff = new FontFace(fam, data);
+        await ff.load(); document.fonts.add(ff);
+        slotEl.classList.add('loaded'); slotEl.firstChild.textContent = label + ' ✓';
+        cb(fam);
+        setStatus(file.name + ' loaded → ' + label, 'ok');
+      } catch (e) { setStatus('could not load font ' + file.name, 'rec'); }
+    }
+    $('#headFontFile').addEventListener('change', e => {
+      if (e.target.files[0]) loadFontFile(e.target.files[0], $('#headFontSlot'), 'HEADLINE FONT', f => headFontFam = f);
+    });
+    $('#scriptFontFile').addEventListener('change', e => {
+      if (e.target.files[0]) loadFontFile(e.target.files[0], $('#scriptFontSlot'), 'SCRIPT FONT', f => scriptFontFam = f);
+    });
 
-/* ---------- recorder ---------- */
-function pickMime(){
-  const cands = [
-    'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
-    'video/mp4',
-    'video/webm;codecs=vp9,opus',
-    'video/webm'
-  ];
-  for(const m of cands) if(window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m;
-  return '';
-}
-$('#recBtn').addEventListener('click', ()=>{
-  if(recording){ finishRec(); return; }
-  const loaded = Object.values(stems).some(s=>s.buffer);
-  if(!loaded){ setStatus('load at least one stem first','rec'); return; }
-  ensureCtx();
-  recMime = pickMime();
-  if(!recMime){ setStatus('this browser cannot record — use Chrome or Safari','rec'); return; }
-  const clipEnd = Math.min(clipIn+clipLen, duration);
-  if(clipEnd - clipIn < 1){ setStatus('clip region is outside the song — move IN point','rec'); return; }
-  stopAll();
-  const vidStream = cv.captureStream(60);
-  const aTrack = recDest.stream.getAudioTracks()[0];
-  if(aTrack) vidStream.addTrack(aTrack);
-  recChunks = [];
-  recorder = new MediaRecorder(vidStream, {mimeType:recMime, videoBitsPerSecond: hiRes?16_000_000:10_000_000});
-  recorder.ondataavailable = e=>{ if(e.data.size) recChunks.push(e.data); };
-  recorder.onstop = saveRecording;
-  seekTo(clipIn);
-  playAll(clipIn);
-  recorder.start(1000);
-  recording = true;
-  $('#recDot').style.display='block';
-  $('#recBtn').textContent='■ STOP';
-  setStatus('recording '+clipLen+'s clip … keep this tab visible','rec');
-});
-function finishRec(){
-  if(!recording) return;
-  recording = false;
-  try{ recorder.stop(); }catch(e){}
-  stopAll();
-  $('#recDot').style.display='none';
-  $('#recBtn').textContent='● REC';
-}
-function saveRecording(){
-  const blob = new Blob(recChunks, {type:recMime.split(';')[0]});
-  const ext = recMime.includes('mp4') ? 'mp4' : 'webm';
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'stemvis_'+seed.toString(36)+'_'+clipLen+'s.'+ext;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url), 30000);
-  setStatus('saved '+a.download+(ext==='webm'?' — TikTok web accepts webm; convert to mp4 for IG':''), 'ok');
-}
+    /* ---------- UI: transport ---------- */
+    let seekDragging = false;
+    $('#playBtn').addEventListener('click', () => playing ? (stopAll(), startOffset = playhead()) : playAll(startOffset));
+    window.addEventListener('keydown', e => {
+      if (e.code === 'Space' && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)) {
+        e.preventDefault();
+        playing ? (startOffset = playhead(), stopAll()) : playAll(startOffset);
+      }
+    });
+    $('#seek').addEventListener('input', e => { seekDragging = true; updateClock(+e.target.value); });
+    $('#seek').addEventListener('change', e => { seekDragging = false; seekTo(+e.target.value); });
+    $('#setInBtn').addEventListener('click', () => {
+      clipIn = playhead(); updateClipInfo();
+    });
+    document.querySelectorAll('.lenBtn').forEach(b => b.addEventListener('click', () => {
+      document.querySelectorAll('.lenBtn').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      clipLen = +b.dataset.len; updateClipInfo();
+    }));
+    $('#loopBtn').addEventListener('click', e => {
+      loopClip = !loopClip; e.target.classList.toggle('active', loopClip);
+    });
+    $('#resBtn').addEventListener('click', e => {
+      hiRes = !hiRes;
+      recW = hiRes ? 1080 : 720; recH = hiRes ? 1920 : 1280;
+      cv.width = recW; cv.height = recH;
+      e.target.textContent = hiRes ? '1080p' : '720p';
+    });
+    function updateClipInfo() {
+      $('#clipInfo').textContent = 'in ' + fmtT(clipIn) + ' · ' + clipLen + 's';
+    }
 
-/* ---------- status ---------- */
-function setStatus(msg, cls){
-  const el = $('#status');
-  el.textContent = msg;
-  el.className = cls||'';
-}
+    /* ---------- recorder ---------- */
+    function pickMime() {
+      const cands = [
+        'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+        'video/mp4',
+        'video/webm;codecs=vp9,opus',
+        'video/webm'
+      ];
+      for (const m of cands) if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m;
+      return '';
+    }
+    $('#recBtn').addEventListener('click', () => {
+      if (recording) { finishRec(); return; }
+      const loaded = Object.values(stems).some(s => s.buffer);
+      if (!loaded) { setStatus('load at least one stem first', 'rec'); return; }
+      ensureCtx();
+      recMime = pickMime();
+      if (!recMime) { setStatus('this browser cannot record — use Chrome or Safari', 'rec'); return; }
+      const clipEnd = Math.min(clipIn + clipLen, duration);
+      if (clipEnd - clipIn < 1) { setStatus('clip region is outside the song — move IN point', 'rec'); return; }
+      stopAll();
+      const vidStream = cv.captureStream(60);
+      const aTrack = recDest.stream.getAudioTracks()[0];
+      if (aTrack) vidStream.addTrack(aTrack);
+      recChunks = [];
+      recorder = new MediaRecorder(vidStream, { mimeType: recMime, videoBitsPerSecond: hiRes ? 16_000_000 : 10_000_000 });
+      recorder.ondataavailable = e => { if (e.data.size) recChunks.push(e.data); };
+      recorder.onstop = saveRecording;
+      seekTo(clipIn);
+      playAll(clipIn);
+      recorder.start(1000);
+      recording = true;
+      $('#recDot').style.display = 'block';
+      $('#recBtn').textContent = '■ STOP';
+      setStatus('recording ' + clipLen + 's clip … keep this tab visible', 'rec');
+    });
+    function finishRec() {
+      if (!recording) return;
+      recording = false;
+      try { recorder.stop(); } catch (e) { }
+      stopAll();
+      $('#recDot').style.display = 'none';
+      $('#recBtn').textContent = '● REC';
+    }
+    function saveRecording() {
+      const blob = new Blob(recChunks, { type: recMime.split(';')[0] });
+      const ext = recMime.includes('mp4') ? 'mp4' : 'webm';
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'stemvis_' + seed.toString(36) + '_' + clipLen + 's.' + ext;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+      setStatus('saved ' + a.download + (ext === 'webm' ? ' — TikTok web accepts webm; convert to mp4 for IG' : ''), 'ok');
+    }
 
-/* meter refs for initially loaded strips (registered on change above) */
-document.querySelectorAll('.strip').forEach((div,i)=>{
-  const key = ROLES[i].key;
-  const meterEl = div.querySelector('.meter i');
-  const obs = new MutationObserver(()=>{ if(stems[key]) stems[key].meterEl = meterEl; });
-  obs.observe(div,{attributes:true,attributeFilter:['class']});
-});
+    /* ---------- status ---------- */
+    function setStatus(msg, cls) {
+      const el = $('#status');
+      el.textContent = msg;
+      el.className = cls || '';
+    }
 
-updateClipInfo();
-requestAnimationFrame(loop);
-</script>
+    /* meter refs for initially loaded strips (registered on change above) */
+    document.querySelectorAll('.strip').forEach((div, i) => {
+      const key = ROLES[i].key;
+      const meterEl = div.querySelector('.meter i');
+      const obs = new MutationObserver(() => { if (stems[key]) stems[key].meterEl = meterEl; });
+      obs.observe(div, { attributes: true, attributeFilter: ['class'] });
+    });
+
+    updateClipInfo();
+    requestAnimationFrame(loop);
+  </script>
 </body>
+
 </html>
