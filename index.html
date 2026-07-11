@@ -569,6 +569,16 @@
       flex: 1;
     }
 
+    #sparkRow {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    #sparkRow .tbtn {
+      flex: 1;
+    }
+
     #timeList {
       margin-top: 8px;
       max-height: 36vh;
@@ -785,6 +795,11 @@
         <div id="iconRow"></div>
       </div>
 
+      <div>
+        <div class="section-label">SPARK FX — how the lead/arp melody shows</div>
+        <div id="sparkRow"></div>
+      </div>
+
       <div class="note">
         <b>flow:</b> export full-length aligned stems (or a 4-track split, or just the mix) →
         pick a channel TEMPLATE, load audio, adjust any strip's role →
@@ -989,7 +1004,7 @@
       s.analyser.fftSize = 1024; s.analyser.smoothingTimeConstant = .5;
       s.timeData = new Float32Array(s.analyser.fftSize);
       s.freqData = new Uint8Array(s.analyser.frequencyBinCount);
-      s.env = 0; s.prevRms = 0; s.peak = 0; s.onset = false; s.lastOnsetT = 0; s.centroid = .5;
+      s.env = 0; s.prevRms = 0; s.peak = 0; s.onset = false; s.lastOnsetT = 0; s.centroid = .5; s.pitch = .5;
       s.gain.connect(s.analyser); s.analyser.connect(masterGain);
       s.gain.gain.value = s.mute ? 0 : 1;
       duration = Math.max(...slots.map(x => x.buffer ? x.buffer.duration : 0));
@@ -1054,6 +1069,13 @@
           s.onset = true; s.lastOnsetT = now;
         }
         s.prevRms = lerp(s.prevRms, nrm, .55);
+        // zero-crossing pitch proxy (0 low … 1 high) — same math as offline export
+        if (nrm > .12) {
+          let zc = 0;
+          for (let i = 1; i < s.timeData.length; i++) if ((s.timeData[i - 1] < 0) !== (s.timeData[i] < 0)) zc++;
+          const frq = zc / 2 * (actx.sampleRate / s.timeData.length);
+          s.pitch = lerp(s.pitch, clamp(Math.log2(Math.max(frq, 40) / 40) / 7, 0, 1), .5);
+        }
         // spectral centroid (brightness / rough pitch height)
         s.analyser.getByteFrequencyData(s.freqData);
         let num = 0, den = 0;
@@ -1104,6 +1126,34 @@
       section = 'drop'; dropFlash = 1; punch = 1; lastDropT = clockNow();
       for (let i = 0; i < 50; i++) sparks.push({ x: Math.random() * cv.width, y: Math.random() * cv.height, life: 1, size: 1 + Math.random() * 3 });
       newShot();
+    }
+
+    /* ---------- melody sequencer: leads/arps become visible notes ----------
+       every SPARK onset drops a mark at its pitch height, marching across the
+       frame like a step sequencer; a contour line chains them so the melody's
+       shape is literally drawn. VOICE chops join in when no lyric is showing. */
+    let notes = [], noteCol = 0, sparkFx = 'shards';
+    const SPARK_FX_DEFS = [['shards','SHARDS'],['panels','PANELS'],['comets','COMETS'],['off','OFF']];
+    function pitchOf(role) {
+      let best = null;
+      for (const s of slots) {
+        if (!s.buffer || s.mute) continue;
+        if (s.role === role || (s.role === 'mix' && MIX_ROLES[role]))
+          if (!best || s.env > best.env) best = s;
+      }
+      return best && best.pitch != null ? best.pitch : .5;
+    }
+    function spawnNote(role, strength) {
+      const p = pitchOf(role);
+      let ang = -Math.PI/2 + (1-p)*Math.PI + (Math.random()-.5)*.7;   // high notes fly up, low notes dive
+      if (Math.random() < .5) ang = Math.PI - ang;                     // spray both sides
+      noteCol = (noteCol + 2) % 5;
+      notes.push({
+        p, ang, s: .6 + strength*.9, born: tGlobal, life: 1,
+        col: noteCol, row: Math.round((1-p)*6),
+        edge: Math.random()<.5 ? -1 : 1, y0: .12 + (1-p)*.6 + Math.random()*.08,
+      });
+      if (notes.length > 28) notes.shift();
     }
 
     /* ---------- renderer ---------- */
@@ -1285,7 +1335,7 @@
       try {
         localStorage.setItem('stemvis', JSON.stringify({
           words: $('#wordsInput').value, lyr: $('#lyricsInput').value, times: lyricTimes, icons: [...iconPool], theme: themeKey, roles: slots.map(s => s.role),
-          hook: { t: $('#hookInput').value, s: hookStyle, l: hookLen }
+          hook: { t: $('#hookInput').value, s: hookStyle, l: hookLen }, sparkfx: sparkFx
         }));
       } catch (e) { }
     }
@@ -1309,6 +1359,7 @@
             document.querySelectorAll('.hookLenBtn').forEach(b => b.classList.toggle('active', +b.dataset.hl === hookLen));
           }
         }
+        if (SPARK_FX_DEFS.some(x => x[0] === d.sparkfx)) sparkFx = d.sparkfx;
       } catch (e) { }
     }
 
@@ -1401,6 +1452,8 @@
       if (!shot || nowS - lastCutReal > (9 - 7 * params.cuts) * (section === 'chill' ? 1.7 : 1)) newShot();
       cutFlash = Math.max(0, cutFlash - dt * 10);
       if (hit('vox') && voxRings.length < 6) voxRings.push({ age: 0 });
+      if (hit('arps')) spawnNote('arps', aE);
+      if (hit('vox') && !(shot && shot.word)) spawnNote('vox', vE);
 
       /* palette — theme recipe, STYLE morphs it, CHORDS breathe it */
       const st = params.style;
@@ -1450,6 +1503,54 @@
       ctx2d.translate(cx + jx, cy + jy); ctx2d.scale(cam, cam);
       ctx2d.rotate(shot.tilt * (1 + params.warp) + Math.sin(tGlobal * .21) * .004);
       ctx2d.translate(-cx, -cy);
+
+      /* SPARK FX → the melody made visible, full-frame, drawn BEHIND the focal
+         element so it energises the whole frame without cluttering it */
+      for (const nt of notes) nt.life -= dt * (sparkFx === 'panels' ? 1.5 : sparkFx === 'comets' ? .55 : .8);
+      notes = notes.filter(n => n.life > 0);
+      if (sparkFx !== 'off' && notes.length) {
+        const fx0 = cx, fy0 = H * shot.y;
+        for (let i = 0; i < notes.length; i++) {
+          const nt = notes[i];
+          const age = tGlobal - nt.born;
+          const al = clamp(nt.life, 0, 1);
+          if (sparkFx === 'shards') {
+            /* streaks exploding out of the focal point — high notes up, low notes down */
+            const dist = mn * (.14 + age * (.6 + nt.s * .5) * (1 + punch * .4));
+            const x = fx0 + Math.cos(nt.ang) * dist;
+            const y = fy0 + Math.sin(nt.ang) * dist;
+            const len = mn * (.07 + nt.s * .1) * al;
+            ctx2d.save();
+            ctx2d.translate(x, y);
+            ctx2d.rotate(nt.ang);
+            ctx2d.fillStyle = withA(i % 3 ? ink : acc, al * .85);
+            ctx2d.fillRect(-len, -mn * .006 * nt.s - 1, len, mn * .012 * nt.s + 2);
+            ctx2d.restore();
+          } else if (sparkFx === 'panels') {
+            /* full-frame light wall: each note flashes a grid panel (row = pitch) */
+            const pw = W / 5, ph2 = H / 7;
+            const x = nt.col * pw, y = nt.row * ph2;
+            ctx2d.fillStyle = withA(acc, Math.pow(al, 1.6) * .38);
+            ctx2d.fillRect(x + 3, y + 3, pw - 6, ph2 - 6);
+            ctx2d.strokeStyle = withA(ink, al * .5);
+            ctx2d.lineWidth = 2;
+            ctx2d.strokeRect(x + 3, y + 3, pw - 6, ph2 - 6);
+          } else if (sparkFx === 'comets') {
+            /* comets streak across the whole frame at their pitch height */
+            const x = nt.edge > 0 ? W * (-.05 + age * .75) : W * (1.05 - age * .75);
+            if (x < -W * .1 || x > W * 1.1) { nt.life = 0; continue; }
+            const y = H * nt.y0 + Math.sin(age * 5 + i) * H * .01;
+            const tail = W * .12 * al;
+            const g4 = ctx2d.createLinearGradient(x - nt.edge * tail, y, x, y);
+            g4.addColorStop(0, withA(acc, 0));
+            g4.addColorStop(1, withA(acc, al * .8));
+            ctx2d.fillStyle = g4;
+            ctx2d.fillRect(nt.edge > 0 ? x - tail : x, y - mn * .005, tail, mn * .01);
+            ctx2d.fillStyle = withA(ink, al);
+            ctx2d.beginPath(); ctx2d.arc(x, y, mn * .009 * nt.s + 1, 0, Math.PI * 2); ctx2d.fill();
+          }
+        }
+      }
 
       const word = (shot.word || '').toUpperCase();
       const font = px => kinFont(px, shot.useB);
@@ -1797,7 +1898,7 @@
        renders in preview AND export, always in the current theme's palette/fonts. */
     let hookStyle = 'off', hookLen = 3, hookIdeaIdx = 0;
     let lastPal = { bg: '#0b0b0c', ink: '#f2efe8', acc: 'hsl(30,90%,58%)' };
-    const HOOK_STYLE_DEFS = [['off', 'OFF'], ['caption', 'CAPTION'], ['stamp', 'STAMP'], ['glitch', 'GLITCH'], ['wait', 'WAIT BAR']];
+    const HOOK_STYLE_DEFS = [['off', 'OFF'], ['caption', 'CAPTION'], ['stamp', 'STAMP'], ['glitch', 'GLITCH'], ['wait', 'WAIT BAR'], ['count', 'COUNT'], ['flash', 'FLASH'], ['typer', 'TYPER']];
     const HOOK_IDEAS = [
       "wait for the drop…",
       "the drop at 0:15 is illegal",
@@ -1879,6 +1980,64 @@
         ctx2d.fillRect(cx - bw / 2, y + fpx * 1.2, bw, mn * .008);
         ctx2d.fillStyle = lastPal.acc;
         ctx2d.fillRect(cx - bw / 2, y + fpx * 1.2, bw * p, mn * .008);
+      } else if (hookStyle === 'count') {
+        /* giant countdown — the number slams in every second with a shock ring */
+        const remain = Math.max(0.001, hookLen - tIn);
+        const num = Math.ceil(remain);
+        const inSec = 1 - (remain - Math.floor(remain));
+        const pop = 1 + Math.max(0, 1 - inSec / .25) * .8;
+        const fpx = H * .16;
+        ctx2d.translate(cx, H * .3);
+        ctx2d.save();
+        ctx2d.scale(pop, pop);
+        ctx2d.font = hf(fpx);
+        ctx2d.fillStyle = lastPal.acc; ctx2d.fillText(String(num), fpx * .04, fpx * .04);
+        ctx2d.fillStyle = lastPal.ink; ctx2d.fillText(String(num), 0, 0);
+        ctx2d.restore();
+        ctx2d.globalAlpha = a * Math.max(0, 1 - inSec / .4);
+        ctx2d.strokeStyle = lastPal.acc; ctx2d.lineWidth = 3;
+        ctx2d.beginPath(); ctx2d.arc(0, 0, fpx * (.8 + inSec * 1.6), 0, Math.PI * 2); ctx2d.stroke();
+        ctx2d.globalAlpha = a;
+        const spx = Math.min(fitPx(up, hf, W * .7), H * .032);
+        ctx2d.font = hf(spx);
+        ctx2d.fillStyle = lastPal.ink;
+        ctx2d.fillText(up, 0, -fpx * .95);
+      } else if (hookStyle === 'flash') {
+        /* strobe entry: panel + text alternate colours hard, then lock in */
+        const strobing = tIn < .65;
+        const flip = strobing && (Math.floor(tIn / .09) % 2 === 0);
+        const lines2 = splitBalanced(up);
+        const fpx = Math.min(...lines2.map(l => fitPx(l, hf, W * .8)), H * .085);
+        if (flip) { ctx2d.fillStyle = lastPal.acc; ctx2d.fillRect(0, 0, W, H); }
+        ctx2d.translate(cx, H * .3);
+        const sc2 = strobing ? 1 + Math.random() * .06 : 1 + punch * .05;
+        ctx2d.scale(sc2, sc2);
+        ctx2d.font = hf(fpx);
+        lines2.forEach((l, i) => {
+          const ly = (i - (lines2.length - 1) / 2) * fpx * 1.1;
+          if (strobing) {
+            ctx2d.fillStyle = flip ? lastPal.bg : lastPal.ink;
+            ctx2d.fillText(l, 0, ly);
+          } else {
+            ctx2d.fillStyle = lastPal.acc; ctx2d.fillText(l, fpx * .045, ly + fpx * .045);
+            ctx2d.fillStyle = lastPal.ink; ctx2d.fillText(l, 0, ly);
+          }
+        });
+      } else if (hookStyle === 'typer') {
+        /* types on with a blinking block cursor */
+        const shown = up.slice(0, Math.floor(tIn * 24));
+        const fpx = Math.min(fitPx(up, hf, W * .82), H * .05);
+        ctx2d.font = hf(fpx);
+        ctx2d.textAlign = 'left';
+        const x0 = cx - ctx2d.measureText(up).width / 2, y = H * .17;
+        ctx2d.shadowColor = 'rgba(0,0,0,.6)'; ctx2d.shadowBlur = 8;
+        ctx2d.fillStyle = lastPal.ink;
+        ctx2d.fillText(shown, x0, y);
+        ctx2d.shadowBlur = 0;
+        if ((tGlobal * 2.6) % 1 < .55) {
+          ctx2d.fillStyle = lastPal.acc;
+          ctx2d.fillRect(x0 + ctx2d.measureText(shown).width + fpx * .08, y - fpx * .45, fpx * .5, fpx * .9);
+        }
       }
       ctx2d.restore();
       ctx2d.globalAlpha = 1;
@@ -2049,6 +2208,19 @@
       saveLocal();
     }));
     $('#hookInput').addEventListener('input', saveLocal);
+
+    /* spark fx chips */
+    function renderSparkChips() {
+      const el = $('#sparkRow');
+      el.innerHTML = '';
+      for (const [k, lbl] of SPARK_FX_DEFS) {
+        const b = document.createElement('button');
+        b.className = 'tbtn' + (sparkFx === k ? ' active' : '');
+        b.textContent = lbl;
+        b.addEventListener('click', () => { sparkFx = k; notes = []; renderSparkChips(); saveLocal(); });
+        el.appendChild(b);
+      }
+    }
 
     /* filler pool chips */
     function renderIconChips() {
@@ -2298,17 +2470,18 @@
 
     /* per-frame envelope/onset from a decoded buffer — mirrors analyse() */
     function computeSlotFeatures(slot, t0, fps, frames) {
-      const out = { env: new Float32Array(frames), onset: new Uint8Array(frames) };
+      const out = { env: new Float32Array(frames), onset: new Uint8Array(frames), pitch: new Float32Array(frames) };
       const buf = slot.buffer, sr = buf.sampleRate;
       const ch = buf.getChannelData(0);
       const ch2 = buf.numberOfChannels > 1 ? buf.getChannelData(1) : null;
-      let peak = 0, envV = 0, prev = 0, lastOn = -9;
+      let peak = 0, envV = 0, prev = 0, lastOn = -9, pitchV = .5;
       const dt = 1 / fps, win = 1024;
       for (let f = 0; f < frames; f++) {
         const t = t0 + f * dt;
         const c = Math.floor(t * sr);
+        const st = Math.max(0, c - win), en = Math.min(ch.length, c);
         let sum = 0, n = 0;
-        for (let i = Math.max(0, c - win); i < Math.min(ch.length, c); i += 2) {
+        for (let i = st; i < en; i += 2) {
           const v = ch2 ? (ch[i] + ch2[i]) * .5 : ch[i];
           sum += v * v; n++;
         }
@@ -2319,6 +2492,14 @@
         if (nrm - prev > .2 && nrm > .3 && (t - lastOn) > .085) { out.onset[f] = 1; lastOn = t; }
         prev = lerp(prev, nrm, .55);
         out.env[f] = envV;
+        // zero-crossing pitch proxy — same math as live analyse()
+        if (nrm > .12 && en - st > 2) {
+          let zc = 0;
+          for (let i = st + 1; i < en; i++) if ((ch[i - 1] < 0) !== (ch[i] < 0)) zc++;
+          const frq = zc / 2 * (sr / (en - st));
+          pitchV = lerp(pitchV, clamp(Math.log2(Math.max(frq, 40) / 40) / 7, 0, 1), .5);
+        }
+        out.pitch[f] = pitchV;
       }
       return out;
     }
@@ -2457,13 +2638,14 @@
         shot = null; shotIdx = 0; kickCount = 0; lyricIdx = -1;
         songE = 0; songESlow = 0; section = 'chill'; buildAmt = 0; dropFlash = 0; lastDropT = -1e9;
         kickSinceCut = 0; nextCutKicks = 4;
+        notes = []; noteCol = 0;
 
         setStatus('export 3/4 — rendering frames …'); await tick();
         for (let f = 0; f < frames; f++) {
           if (exportAbort || encErr) break;
           renderClock = t0 + f / fps;
           slots.forEach((s, i) => {
-            if (feats[i]) { s.env = feats[i].env[f]; s.onset = !!feats[i].onset[f]; }
+            if (feats[i]) { s.env = feats[i].env[f]; s.onset = !!feats[i].onset[f]; s.pitch = feats[i].pitch[f]; }
             else { s.env = 0; s.onset = false; }
           });
           drawFrame(1 / fps);
@@ -2525,6 +2707,7 @@
     renderThemeChips();
     renderTmplChips();
     renderHookChips();
+    renderSparkChips();
     updateClipInfo();
     requestAnimationFrame(loop);
   </script>
