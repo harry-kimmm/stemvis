@@ -148,6 +148,8 @@
   #globalNudge .tbtn{flex:1;}
   #iconRow{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;}
   #iconRow .tbtn{padding:5px 7px; font-size:9px; letter-spacing:.06em;}
+  #themeRow{display:flex; gap:8px; margin-top:6px; flex-wrap:wrap;}
+  #themeRow .tbtn{flex:1;}
   #timeList{margin-top:8px; max-height:36vh; overflow-y:auto; display:flex; flex-direction:column; gap:2px;}
   .trow{
     display:flex; align-items:center; gap:5px; font-size:10px; color:var(--dim);
@@ -277,8 +279,13 @@
     </div>
   </section>
 
-  <!-- ================= RIGHT RACK — live controls: knobs + lyrics ================= -->
+  <!-- ================= RIGHT RACK — live controls: theme + knobs + lyrics ================= -->
   <aside class="rack" id="rackR">
+    <div>
+      <div class="section-label">THEME — the aesthetic · knobs + DICE vary within it</div>
+      <div id="themeRow"></div>
+    </div>
+
     <div>
       <div class="section-label">MACROS — drag knobs vertically</div>
       <div id="knobGrid"></div>
@@ -350,7 +357,7 @@ let recording = false, recorder = null, recChunks = [], recMime = '', recSecs = 
 const clipEndT = () => clipLen==='full' ? duration : clipIn + clipLen;
 let recW = 720, recH = 1280, hiRes = false;
 
-const params = { energy:.7, cuts:.5, warp:.35, scramble:.2, hue:.58, style:.5 };
+const params = { energy:.7, cuts:.5, warp:.35, scramble:.2, hue:.58, style:.5, size:.45 };
 let seed = (Math.random()*1e9)|0;
 let rng = mulberry32(seed);
 
@@ -477,13 +484,56 @@ const grainCv = document.createElement('canvas'); grainCv.width=grainCv.height=1
   g.putImageData(id,0,0);
 })();
 
+/* halftone dot-screen tile (print theme) */
+const dotCv = document.createElement('canvas'); dotCv.width=dotCv.height=96;
+(function(){
+  const g = dotCv.getContext('2d');
+  g.fillStyle='#808080'; g.fillRect(0,0,96,96);
+  g.fillStyle='#2c2c2c';
+  for(let y=0;y<=96;y+=6) for(let x=0;x<=96;x+=6){
+    g.beginPath(); g.arc(x+((y/6)%2?3:0), y, 1.5, 0, Math.PI*2); g.fill();
+  }
+})();
+
 function baseHue(){ return params.hue*360; }
+const withA = (c,a)=>c.replace('hsl(','hsla(').replace(')',`,${a})`);
+
+/* ---------- themes: named aesthetics ----------
+   a theme bundles palette recipe, image treatment, type voice, post texture,
+   motion feel, and shot-mode weights. DICE + knobs vary WITHIN a theme, so
+   re-running the same song under a different theme gives a different video.
+   add new aesthetics here — this is the main growth surface. */
+const THEMES = {
+  mono: { label:'MONO',       // bold b&w kinetic — the original
+    weights:{icon:2, iconField:1, type:2, stack:2, wall:1, art:2},
+    serif:0, italic:0, glow:0, aura:0, halftone:0, strobe:1, soft:0, motion:1,
+    duo:{hueOff:0, loS:45, loL:8, hiS:30, hiL:82},
+  },
+  occult: { label:'OCCULT',   // near-black, glowing halo ring, serif, icon-heavy
+    weights:{icon:4, iconField:1, type:2, stack:1, wall:0, art:2},
+    serif:1, italic:0, glow:1, aura:1, halftone:0, strobe:0, soft:1, motion:.8,
+    duo:{hueOff:8, loS:60, loL:6, hiS:75, hiL:60},
+  },
+  print: { label:'PRINT',     // saturated colour fields + halftone dot screen
+    weights:{icon:2, iconField:2, type:2, stack:1, wall:2, art:4},
+    serif:0, italic:0, glow:0, aura:0, halftone:1, strobe:1, soft:0, motion:1,
+    duo:{hueOff:-6, loS:75, loL:14, hiS:20, hiL:88},
+  },
+  velvet: { label:'VELVET',   // deep soft dark, italic serif glow, slow drift
+    weights:{icon:1, iconField:0, type:3, stack:1, wall:0, art:4},
+    serif:1, italic:1, glow:1, aura:.6, halftone:0, strobe:0, soft:1, motion:.55,
+    duo:{hueOff:0, loS:70, loL:7, hiS:35, hiL:78},
+  },
+};
+let themeKey = 'mono';
 
 /* fonts (user .ttf/.otf files) + duotone image cache */
 let fontAFam = null, fontBFam = null, fontN = 0;
 function kinFont(px, useB){
   const fam = useB ? (fontBFam||fontAFam) : (fontAFam||fontBFam);
-  return `900 ${px}px ${fam?`"${fam}",`:''}"Arial Black","Helvetica Neue",Helvetica,Impact,sans-serif`;
+  const T = THEMES[themeKey];
+  const fb = T.serif ? '"Didot","Bodoni 72",Georgia,serif' : '"Arial Black","Helvetica Neue",Helvetica,Impact,sans-serif';
+  return `${T.italic?'italic ':''}${T.serif?800:900} ${px}px ${fam?`"${fam}",`:''}${fb}`;
 }
 function fitPx(txt, fontFn, target){
   ctx2d.font = fontFn(100);
@@ -543,12 +593,13 @@ function hsl2rgb(h,s,l){
 }
 const duoCache = new WeakMap();
 function duotone(img){
-  // remap image luminance onto a shadow→highlight pair from the hue knob
-  const key = Math.round(params.hue*24)*100 + Math.round(params.style*10);
+  // remap image luminance onto the theme's shadow→highlight pair (hue knob rotates it)
+  const key = themeKey+'|'+Math.round(params.hue*24)+'|'+Math.round(params.style*10);
   const c = duoCache.get(img);
   if(c && (c.key===key || performance.now()-c.at < 250)) return c.cv;
-  const bh = baseHue();
-  const lo = hsl2rgb(bh,45,8), hi = hsl2rgb(bh,20+params.style*25,82);
+  const D = THEMES[themeKey].duo;
+  const dh = (baseHue()+D.hueOff+360)%360;
+  const lo = hsl2rgb(dh, D.loS, D.loL), hi = hsl2rgb(dh, D.hiS+params.style*15, D.hiL);
   const w = Math.min(img.width,1080), h = Math.round(img.height*w/img.width);
   const oc = document.createElement('canvas'); oc.width=w; oc.height=h;
   const g = oc.getContext('2d');
@@ -597,7 +648,7 @@ function parseLRC(txt){
 }
 function saveLocal(){
   try{ localStorage.setItem('stemvis', JSON.stringify({
-    words:$('#wordsInput').value, lyr:$('#lyricsInput').value, times:lyricTimes, icons:[...iconPool]
+    words:$('#wordsInput').value, lyr:$('#lyricsInput').value, times:lyricTimes, icons:[...iconPool], theme:themeKey
   })); }catch(e){}
 }
 function loadLocal(){
@@ -608,6 +659,7 @@ function loadLocal(){
     syncLyricLines();
     if(Array.isArray(d.times)) for(let i=0;i<lyricLines.length;i++) lyricTimes[i] = d.times[i] ?? null;
     if(Array.isArray(d.icons)) iconPool = new Set(d.icons.filter(i=>ICON_LIST.includes(i)));
+    if(d.theme && THEMES[d.theme]) themeKey = d.theme;
   }catch(e){}
 }
 
@@ -630,11 +682,13 @@ function newShot(){
     mode = r()<.72 ? 'type' : 'art';
     word = lyricLines[lyricIdx];
   } else {
-    /* filler: icons + WORDS + images — never stray lyric lines */
+    /* filler: icons + WORDS + images, weighted by the theme — never stray lyric lines */
+    const wts = THEMES[themeKey].weights;
     const cands = [];
-    if(icons.length) cands.push('icon','icon','iconField');
-    if(words.length) cands.push('type','stack','wall');
-    if(imgA||imgB) cands.push('art','art');
+    const push = (m,w)=>{ for(let i=0;i<w;i++) cands.push(m); };
+    if(icons.length){ push('icon',wts.icon); push('iconField',wts.iconField); }
+    if(words.length){ push('type',wts.type); push('stack',wts.stack); push('wall',wts.wall); }
+    if(imgA||imgB) push('art',wts.art);
     if(!cands.length) cands.push('type');
     mode = cands[(r()*cands.length)|0];
     if(words.length) word = words[(r()*words.length)|0];
@@ -665,6 +719,8 @@ function shotImg(){ return shot.imgPick ? (imgA||imgB) : (imgB||imgA); }
 function drawKinetic(dt){
   const W=cv.width, H=cv.height, cx=W/2, cy=H/2, mn=Math.min(W,H);
   const bh = baseHue();
+  const T = THEMES[themeKey];
+  const szMul = .5 + params.size*.9;   // SIZE knob: .5× … 1.4× type/icon scale
   const bE=env('bass'), vE=env('vox'), aE=env('arps'), hE=env('hats'), chE=env('chords');
 
   /* lyric lines force cuts with their text */
@@ -680,18 +736,43 @@ function drawKinetic(dt){
   cutFlash = Math.max(0, cutFlash - dt*10);
   if(hit('vox') && voxRings.length<6) voxRings.push({age:0});
 
-  /* palette — STYLE picks the world, CHORDS breathe it, shots can invert */
+  /* palette — theme recipe, STYLE morphs it, CHORDS breathe it */
   const st = params.style;
   let bg, ink, acc;
-  if(st<.33){ bg=`hsl(${bh},${(chE*25)|0}%,${4+chE*7}%)`; ink='#f2efe8'; acc=`hsl(${bh},90%,58%)`; }
-  else if(st<.66){ bg=`hsl(${bh},55%,${7+chE*9}%)`; ink=`hsl(${bh},12%,93%)`; acc=`hsl(${(bh+45)%360},95%,60%)`; }
-  else { bg=`hsl(${bh},80%,${46+chE*12}%)`; ink='#0c0c0d'; acc='#f4f1e9'; }
-  if(shot.inv){ const t=bg; bg=ink; ink=t; }
+  if(themeKey==='occult'){
+    bg = `hsl(${bh},${30+st*40}%,${3+chE*5}%)`;
+    ink = `hsl(${bh},${55+st*30}%,${62+chE*8}%)`;
+    acc = `hsl(${(bh+18)%360},95%,60%)`;
+  } else if(themeKey==='print'){
+    bg = `hsl(${bh},${45+st*40}%,${18+st*22+chE*8}%)`;
+    ink = `hsl(${bh},18%,94%)`;
+    acc = `hsl(${(bh+150)%360},90%,${60+st*15}%)`;
+  } else if(themeKey==='velvet'){
+    bg = `hsl(${bh},${40+st*30}%,${6+chE*6}%)`;
+    ink = `hsl(${bh},${25+st*30}%,82%)`;
+    acc = `hsl(${(bh+30)%360},70%,72%)`;
+  } else { /* mono: STYLE walks b&w → tinted dark → full colour field */
+    if(st<.33){ bg=`hsl(${bh},${(chE*25)|0}%,${4+chE*7}%)`; ink=`hsl(${bh},6%,93%)`; acc=`hsl(${bh},90%,58%)`; }
+    else if(st<.66){ bg=`hsl(${bh},55%,${7+chE*9}%)`; ink=`hsl(${bh},12%,93%)`; acc=`hsl(${(bh+45)%360},95%,60%)`; }
+    else { bg=`hsl(${bh},80%,${46+chE*12}%)`; ink=`hsl(${bh},20%,6%)`; acc=`hsl(${bh},15%,94%)`; }
+  }
+  if(shot.inv && !T.soft){ const t=bg; bg=ink; ink=t; }
   ctx2d.fillStyle = bg; ctx2d.fillRect(0,0,W,H);
 
-  /* camera: per-shot zoom drift + kick pump + hats stutter */
+  /* aura — glowing halo ring behind the focal point, breathing with the bass */
+  if(T.aura){
+    const fy = H*shot.y;
+    const g2 = ctx2d.createRadialGradient(cx,fy,mn*.08, cx,fy,mn*(.6+bE*.12));
+    g2.addColorStop(0,'rgba(0,0,0,0)');
+    g2.addColorStop(.5, withA(acc, (.04+bE*.2)*T.aura));
+    g2.addColorStop(.74, withA(acc, (.12+bE*.3)*T.aura));
+    g2.addColorStop(1,'rgba(0,0,0,0)');
+    ctx2d.fillStyle = g2; ctx2d.fillRect(0,0,W,H);
+  }
+
+  /* camera: per-shot zoom drift + kick pump + hats stutter (theme sets the motion feel) */
   const shotAge = nowS-lastCutReal;
-  const cam = (1 + shotAge*.035*shot.zDir*(.3+params.energy)) * (1 + punch*.16*(.3+params.energy*1.4));
+  const cam = (1 + shotAge*.035*shot.zDir*(.3+params.energy)*T.motion) * (1 + punch*.16*T.motion*(.3+params.energy*1.4));
   const jAmp = hE*(3+params.scramble*16);
   const jx=(Math.random()-.5)*jAmp, jy=(Math.random()-.5)*jAmp;
   ctx2d.save();
@@ -706,7 +787,7 @@ function drawKinetic(dt){
     ctx2d.drawImage(dc, cx-dc.width*sc/2, cy-dc.height*sc/2, dc.width*sc, dc.height*sc);
     if(word){
       const lines = splitBalanced(word);
-      const fpx = Math.min(...lines.map(ln=>fitPx(ln,font,W*.8)), H*.14)*(1+vE*.07);
+      const fpx = Math.min(...lines.map(ln=>fitPx(ln,font,W*.8*szMul)), H*.14*szMul*1.2)*(1+vE*.07);
       shot._px = fpx;
       ctx2d.font = font(fpx);
       ctx2d.textAlign='center'; ctx2d.textBaseline='middle';
@@ -726,8 +807,10 @@ function drawKinetic(dt){
     ctx2d.save();
     ctx2d.translate(cx, H*shot.y);
     ctx2d.rotate(tGlobal*shot.spin + Math.sin(tGlobal*.7)*.1);
-    const s = mn*.26*(1+bE*.3+vE*.12)*(1+punch*.14*(.4+params.energy));
+    const s = mn*.26*szMul*(1+bE*.3+vE*.12)*(1+punch*.14*(.4+params.energy));
+    if(T.glow){ ctx2d.shadowColor = withA(acc,.9); ctx2d.shadowBlur = s*.4; }
     paintIcon(shot.icon, s, ink, acc, shot.treat);
+    ctx2d.shadowBlur = 0;
     ctx2d.restore();
     for(let i=0;i<shot.sats;i++){
       const a = tGlobal*.9*shot.zDir + i*Math.PI*2/shot.sats;
@@ -735,12 +818,12 @@ function drawKinetic(dt){
       ctx2d.save();
       ctx2d.translate(cx+Math.cos(a)*R, H*shot.y+Math.sin(a)*R);
       ctx2d.rotate(a);
-      paintIcon(shot.icon, mn*.045*(1+aE*.8), i%2?acc:ink, acc, 0);
+      paintIcon(shot.icon, mn*.045*szMul*(1+aE*.8), i%2?acc:ink, acc, 0);
       ctx2d.restore();
     }
   } else if(shot.mode==='iconField' && shot.icon){
     /* icon grid — hot cell pops on the kick, bass slides alternate rows */
-    const cell = mn*.17;
+    const cell = mn*.17*szMul;
     const cols = Math.ceil(W/cell), rows2 = Math.ceil(H/cell);
     const hot = (kickCount*5+shotIdx)%(cols*rows2);
     let n = 0;
@@ -761,7 +844,7 @@ function drawKinetic(dt){
       ctx2d.restore();
     }
   } else if(shot.mode==='stack' && word){
-    const fpx = Math.min(fitPx(word,font,W*.92), H*.3)*(1+vE*.05);
+    const fpx = Math.min(fitPx(word,font,W*.92*szMul), H*.3*szMul*1.1)*(1+vE*.05);
     shot._px = fpx;
     ctx2d.font = font(fpx);
     ctx2d.textAlign='center'; ctx2d.textBaseline='middle';
@@ -775,7 +858,7 @@ function drawKinetic(dt){
       else { ctx2d.fillStyle=ink; ctx2d.fillText(word,cx+off,y); }
     }
   } else if(shot.mode==='wall' && word){
-    const fpx = mn*.075*(1+vE*.1);
+    const fpx = mn*.075*szMul*(1+vE*.1);
     shot._px = fpx;
     ctx2d.font = font(fpx);
     ctx2d.textAlign='center'; ctx2d.textBaseline='middle';
@@ -798,7 +881,7 @@ function drawKinetic(dt){
   } else if(word){ /* type — the huge word / lyric line */
     const lines = splitBalanced(word);
     const vert = shot.vert && lines.length===1;
-    let fpx = Math.min(H*.42/lines.length, ...lines.map(ln=>fitPx(ln,font, vert?H*.85:W*.94)));
+    let fpx = Math.min(H*.42*szMul/lines.length, ...lines.map(ln=>fitPx(ln,font, (vert?H*.85:W*.94)*szMul)));
     fpx *= 1 + vE*.08 + punch*.06*params.energy;
     shot._px = fpx;
     ctx2d.save();
@@ -811,6 +894,12 @@ function drawKinetic(dt){
     for(let l=0;l<lines.length;l++){
       const ln = lines[l];
       let x = -ctx2d.measureText(ln).width/2;
+      if(T.glow){   // soft accent bloom behind the line
+        ctx2d.shadowColor = withA(acc,.85); ctx2d.shadowBlur = fpx*.3;
+        ctx2d.fillStyle = ink;
+        ctx2d.fillText(ln, x, y0 + l*lh);
+        ctx2d.shadowBlur = 0;
+      }
       for(let i=0;i<ln.length;i++){
         const chW = ctx2d.measureText(ln[i]).width;
         let chq = ln[i];   // SCRAMBLE corrupts glyphs at random
@@ -919,11 +1008,16 @@ function drawKinetic(dt){
     ctx2d.globalAlpha = 1;
   }
 
-  /* strobe: full-frame invert on hard kicks (ENERGY) + ~2 frames per cut */
-  if((hit('kick') && params.energy>.55 && Math.random()<params.energy*.7) || cutFlash>.7){
-    ctx2d.globalCompositeOperation='difference';
-    ctx2d.fillStyle='#fff'; ctx2d.fillRect(0,0,W,H);
-    ctx2d.globalCompositeOperation='source-over';
+  /* cut pop: hard themes invert-strobe, soft themes wash accent */
+  if(T.strobe){
+    if((hit('kick') && params.energy>.55 && Math.random()<params.energy*.7) || cutFlash>.7){
+      ctx2d.globalCompositeOperation='difference';
+      ctx2d.fillStyle='#fff'; ctx2d.fillRect(0,0,W,H);
+      ctx2d.globalCompositeOperation='source-over';
+    }
+  } else if(cutFlash>.02){
+    ctx2d.fillStyle = withA(acc, cutFlash*.3);
+    ctx2d.fillRect(0,0,W,H);
   }
 }
 
@@ -978,9 +1072,17 @@ function postFX(dt){
     ctx2d.globalAlpha = 1; ctx2d.globalCompositeOperation='source-over';
   }
 
-  /* light vignette + grain (SCRAMBLE dirties the grain) */
+  /* halftone dot screen (print theme) */
+  if(THEMES[themeKey].halftone){
+    ctx2d.globalAlpha = .24;
+    ctx2d.globalCompositeOperation = 'overlay';
+    for(let x=0;x<W;x+=96) for(let y=0;y<H;y+=96) ctx2d.drawImage(dotCv,x,y);
+    ctx2d.globalAlpha = 1; ctx2d.globalCompositeOperation = 'source-over';
+  }
+
+  /* light vignette + grain (SCRAMBLE dirties the grain; soft themes vignette harder) */
   const vg = ctx2d.createRadialGradient(cx,cy,mn*.35,cx,cy,mn*.95);
-  vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,.16)');
+  vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1, THEMES[themeKey].soft?'rgba(0,0,0,.34)':'rgba(0,0,0,.16)');
   ctx2d.fillStyle=vg; ctx2d.fillRect(0,0,W,H);
   ctx2d.globalAlpha = .06 + params.scramble*.06;
   ctx2d.globalCompositeOperation = 'overlay';
@@ -1083,6 +1185,19 @@ $('#fontBFile').addEventListener('change', e=>{
 });
 $('#wordsInput').addEventListener('input', saveLocal);
 
+/* theme chips */
+function renderThemeChips(){
+  const el = $('#themeRow');
+  el.innerHTML = '';
+  for(const k of Object.keys(THEMES)){
+    const b = document.createElement('button');
+    b.className = 'tbtn'+(k===themeKey?' active':'');
+    b.textContent = THEMES[k].label;
+    b.addEventListener('click', ()=>{ themeKey = k; shot = null; renderThemeChips(); saveLocal(); });
+    el.appendChild(b);
+  }
+}
+
 /* filler pool chips */
 function renderIconChips(){
   const rowEl = $('#iconRow');
@@ -1181,7 +1296,8 @@ const KNOBS = [
   {key:'warp',     label:'WARP',     tip:'liquid slice-melt riding the bass'},
   {key:'scramble', label:'SCRAMBLE', tip:'datamosh blocks + glyph corruption'},
   {key:'hue',      label:'HUE',      tip:'palette + duotone rotation'},
-  {key:'style',    label:'STYLE',    tip:'b&w ↔ tinted dark ↔ full colour field'},
+  {key:'style',    label:'STYLE',    tip:'morphs the theme palette'},
+  {key:'size',     label:'SIZE',     tip:'type + icon scale'},
 ];
 const knobGrid = $('#knobGrid');
 for(const k of KNOBS){
@@ -1335,6 +1451,7 @@ document.querySelectorAll('.strip').forEach((div,i)=>{
 loadLocal();
 renderTimeList();
 renderIconChips();
+renderThemeChips();
 updateClipInfo();
 requestAnimationFrame(loop);
 </script>

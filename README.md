@@ -49,10 +49,17 @@ Keep the tab visible while recording — capture is real-time.
   stutter + ink specks · chords: background colour breathing · arps:
   per-letter ripple · vox: type swell + expanding word-echo rings ·
   fx: glitch storm + forced cut
+- **Themes** — named aesthetics (MONO bold b&w · OCCULT glowing halo +
+  serif · PRINT halftone colour fields · VELVET soft dark glow). A theme
+  bundles palette recipe, image treatment, type voice, texture, motion
+  feel, and shot-mode weights; DICE + knobs vary *within* the theme, so
+  re-running the same song under a different theme yields a different
+  video. New aesthetics are added as THEMES entries — the main growth
+  surface.
 - **Macro knobs** — ENERGY (punch/pump/strobe), CUTS (cut rate), WARP
   (liquid slice displacement), SCRAMBLE (datamosh blocks + glyph
-  corruption + glitch floor), HUE (palette/duotone), STYLE (b&w ↔ tinted
-  dark ↔ full colour field)
+  corruption + glitch floor), HUE (palette/duotone), STYLE (morphs the
+  theme palette), SIZE (type + icon scale)
 - **Seeded RNG** (mulberry32) — the whole shot sequence is reproducible per seed
 - **MediaRecorder** — canvas + audio stream capture, 720p/1080p vertical
 
