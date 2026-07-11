@@ -38,7 +38,12 @@ Keep the tab visible while recording — capture is real-time.
   whenever the FX stem hits; each cut lands with a 2-frame invert
 - **Shot modes** — type (huge auto-fit word, per-letter render) · stack
   (word rows fill the frame, hot row rotates) · art (full-bleed duotone
-  image + label strip) · wall (word grid with hot cell)
+  image + label strip) · wall (word grid with hot cell) · icon (big vector
+  glyph + orbiting satellites) · iconField (icon grid with hot cell)
+- **Filler pool** — gaps between timed lyric lines cut to icon shots /
+  WORDS / images (never stray lyric text); the icon chips curate the pool.
+  Each pool entry is a self-contained painter — the plug-point for richer
+  filler scenes later
 - **Per-stem reactions** — kick: zoom pump + strobe invert · bass: warp
   slice-melt + row slides · clap: border + frame flash · hats: camera
   stutter + ink specks · chords: background colour breathing · arps:
@@ -61,3 +66,6 @@ Keep the tab visible while recording — capture is real-time.
 - [ ] Savable looks — knob state + seed + lyric times as export/import JSON presets
 - [ ] Batch render — generate N seed variations of the same clip region
 - [ ] More shot modes (split-frame, image-punch collage, outline storm)
+- [ ] Offline renderer — step the song frame-by-frame off the clock and
+      encode losslessly (WebCodecs); removes realtime-capture frame drops
+      entirely. This is the "scale up" milestone.
