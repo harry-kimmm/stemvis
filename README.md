@@ -35,9 +35,19 @@ Keep the tab visible while recording — capture is real-time.
 
 - **Web Audio API** — one AnalyserNode per stem → running-peak-normalised
   envelope follower, relative-jump onset detection, spectral centroid
+- **Director** — tracks overall song energy → chill / build / drop
+  sections so the edit is phrased like a human cut it: breakdowns hold
+  shots ~3× longer, builds push the camera in with rising shake, a
+  detected drop SLAMS (invert frames, shockwave rings, spark burst,
+  forced cut). Cut spacing is jittered, a constant handheld micro-drift
+  runs under everything, and the whole frame bounces with the bass.
 - **Cut engine** — the composition hard-cuts to a new seeded shot every N
-  kicks (CUTS knob: every 8 → every kick), on every timed lyric line, and
-  whenever the FX stem hits; each cut lands with a 2-frame invert
+  kicks (CUTS knob: every 8 → every kick, phrased by the director), on
+  every timed lyric line, and whenever the FX stem hits
+- **Hook** — theme-styled scroll-stopper over the clip's first 2/3/5s
+  (CAPTION / STAMP / GLITCH / WAIT-BAR styles + built-in hook line ideas);
+  renders in preview and export. Hook styles are a painter registry —
+  more templates slot in later.
 - **Shot modes** — type (huge auto-fit word, per-letter render) · stack
   (word rows fill the frame, hot row rotates) · art (full-bleed duotone
   image + label strip) · wall (word grid with hot cell) · icon (big vector

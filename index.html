@@ -1,1195 +1,1929 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>STEMVIS — stem-reactive video unit</title>
-<style>
-  :root{
-    --panel:#141416; --panel2:#1c1c1f; --panel3:#232327;
-    --line:#2c2c31; --ink:#e8e4dc; --dim:#8a93a6; --faint:#55565c;
-    --led:#ffa028; --led-dim:#7a5a2a; --rec:#ff4040; --ok:#7dd97a;
-    --mono:ui-monospace,'SF Mono','Cascadia Mono','JetBrains Mono',Menlo,Consolas,monospace;
-  }
-  *{box-sizing:border-box; margin:0; padding:0;}
-  html,body{height:100%;}
-  body{
-    background:#0d0d0f; color:var(--ink); font-family:var(--mono);
-    font-size:13px; -webkit-font-smoothing:antialiased; overflow-x:hidden;
-  }
-  ::selection{background:var(--led); color:#111;}
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>STEMVIS — stem-reactive video unit</title>
+  <style>
+    :root {
+      --panel: #141416;
+      --panel2: #1c1c1f;
+      --panel3: #232327;
+      --line: #2c2c31;
+      --ink: #e8e4dc;
+      --dim: #8a93a6;
+      --faint: #55565c;
+      --led: #ffa028;
+      --led-dim: #7a5a2a;
+      --rec: #ff4040;
+      --ok: #7dd97a;
+      --mono: ui-monospace, 'SF Mono', 'Cascadia Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+    }
 
-  header{
-    display:flex; align-items:baseline; gap:14px; padding:14px 20px;
-    border-bottom:1px solid var(--line); background:var(--panel);
-  }
-  .wordmark{font-weight:800; letter-spacing:.34em; font-size:15px;}
-  .wordmark .v{color:var(--led);}
-  .tagline{color:var(--faint); font-size:11px; letter-spacing:.08em;}
-  #status{margin-left:auto; font-size:11px; color:var(--dim); letter-spacing:.06em; text-align:right;}
-  #status.rec{color:var(--rec);}
-  #status.ok{color:var(--ok);}
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
 
-  main{
-    display:grid; grid-template-columns:330px minmax(0,1fr) 380px;
-    gap:0; height:calc(100vh - 49px);
-  }
-  @media (max-width:1100px){
-    main{grid-template-columns:1fr; height:auto;}
-    #stage{order:-1;}
-    .rack{border:none !important; border-top:1px solid var(--line) !important;}
-  }
+    html,
+    body {
+      height: 100%;
+    }
 
-  /* ---------- stage ---------- */
-  #stage{
-    display:flex; flex-direction:column; align-items:center; justify-content:flex-start;
-    padding:22px 22px 30px; gap:14px; overflow-y:auto; min-height:0; background:
-      radial-gradient(1200px 600px at 50% 0%, #131316 0%, #0d0d0f 70%);
-  }
-  #canvasWrap{position:relative; line-height:0;}
-  canvas#viz{
-    background:#000; border:1px solid var(--line);
-    max-height:calc(100vh - 230px); max-width:100%; height:auto;
-    box-shadow:0 0 0 1px #000, 0 18px 60px rgba(0,0,0,.55);
-  }
-  @media (max-width:1100px){ canvas#viz{max-height:66vh;} }
-  #recDot{
-    position:absolute; top:10px; left:10px; width:10px; height:10px; border-radius:50%;
-    background:var(--rec); box-shadow:0 0 10px var(--rec); display:none;
-    animation:blink 1s steps(2) infinite;
-  }
-  @keyframes blink{50%{opacity:.25;}}
+    body {
+      background: #0d0d0f;
+      color: var(--ink);
+      font-family: var(--mono);
+      font-size: 13px;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
 
-  /* transport */
-  #transport{width:100%; max-width:560px; display:flex; flex-direction:column; gap:10px;}
-  #timeline{display:flex; align-items:center; gap:10px;}
-  #playBtn{
-    width:44px; height:36px; background:var(--panel3); border:1px solid var(--line);
-    color:var(--ink); cursor:pointer; font-family:var(--mono); font-size:14px;
-  }
-  #playBtn:hover{border-color:var(--led);}
-  #seek{flex:1; appearance:none; height:4px; background:var(--panel3); outline:none; cursor:pointer;}
-  #seek::-webkit-slider-thumb{
-    appearance:none; width:12px; height:18px; background:var(--ink); cursor:pointer;
-  }
-  #seek::-moz-range-thumb{width:12px; height:18px; background:var(--ink); border:none; cursor:pointer;}
-  #clock{width:96px; text-align:right; color:var(--dim); font-size:12px; letter-spacing:.05em;}
+    ::selection {
+      background: var(--led);
+      color: #111;
+    }
 
-  #clipRow{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
-  .tbtn{
-    background:var(--panel2); border:1px solid var(--line); color:var(--dim);
-    font-family:var(--mono); font-size:11px; letter-spacing:.08em; padding:7px 10px; cursor:pointer;
-  }
-  .tbtn:hover{color:var(--ink); border-color:var(--faint);}
-  .tbtn.active{color:var(--led); border-color:var(--led);}
-  .spacer{flex:1;}
-  #recBtn{
-    background:var(--panel2); border:1px solid var(--rec); color:var(--rec);
-    font-weight:700; letter-spacing:.14em; padding:7px 16px; cursor:pointer; font-family:var(--mono); font-size:11px;
-  }
-  #recBtn:hover{background:var(--rec); color:#0d0d0f;}
-  #recBtn:disabled{opacity:.4; cursor:not-allowed;}
-  #exportBtn{
-    background:var(--panel2); border:1px solid var(--led); color:var(--led);
-    font-weight:700; letter-spacing:.14em; padding:7px 16px; cursor:pointer; font-family:var(--mono); font-size:11px;
-  }
-  #exportBtn:hover{background:var(--led); color:#0d0d0f;}
-  #clipInfo{font-size:11px; color:var(--faint); letter-spacing:.05em;}
+    header {
+      display: flex;
+      align-items: baseline;
+      gap: 14px;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+    }
 
-  /* ---------- racks (left: setup · right: live controls) ---------- */
-  .rack{
-    background:var(--panel); padding:18px 18px 40px;
-    display:flex; flex-direction:column; gap:20px; overflow-y:auto; min-height:0;
-  }
-  #rackL{border-right:1px solid var(--line);}
-  #rackR{border-left:1px solid var(--line);}
-  .section-label{
-    font-size:10px; letter-spacing:.28em; color:var(--faint); font-weight:700;
-    border-bottom:1px solid var(--line); padding-bottom:6px;
-  }
+    .wordmark {
+      font-weight: 800;
+      letter-spacing: .34em;
+      font-size: 15px;
+    }
 
-  /* channel strips */
-  #tmplRow{display:flex; gap:8px; margin-top:8px;}
-  #tmplRow .tbtn{flex:1; padding:6px 4px; font-size:10px;}
-  .strip{
-    display:grid; grid-template-columns:78px 1fr 30px; gap:8px; align-items:center;
-    padding:7px 8px; background:var(--panel2); border:1px solid var(--line); margin-top:6px;
-  }
-  .roleSel{
-    width:78px; background:var(--panel3); border:1px solid var(--line); color:var(--dim);
-    font-family:var(--mono); font-size:9px; letter-spacing:.08em; font-weight:700;
-    padding:5px 2px; cursor:pointer; outline:none;
-  }
-  .roleSel:hover, .strip.loaded .roleSel{color:var(--led); border-color:var(--faint);}
-  .strip .fileLbl{
-    position:relative; overflow:hidden; display:flex; flex-direction:column; gap:4px; cursor:pointer; min-width:0;
-  }
-  .strip .fname{
-    font-size:11px; color:var(--faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-  }
-  .strip.loaded .fname{color:var(--ink);}
-  .strip input[type=file]{position:absolute; inset:0; opacity:0; cursor:pointer;}
-  .meter{height:3px; background:var(--panel3); position:relative;}
-  .meter i{position:absolute; left:0; top:0; bottom:0; width:0%; background:var(--led); transition:none;}
-  .mute{
-    width:26px; height:26px; background:var(--panel3); border:1px solid var(--line);
-    color:var(--faint); font-size:10px; cursor:pointer; font-family:var(--mono);
-  }
-  .mute.on{color:var(--rec); border-color:var(--rec);}
+    .wordmark .v {
+      color: var(--led);
+    }
 
-  /* assets + text */
-  .imgRow{display:flex; gap:8px; margin-top:6px;}
-  .imgSlot{
-    flex:1; position:relative; overflow:hidden; background:var(--panel2); border:1px dashed var(--line);
-    padding:10px 8px; text-align:center; font-size:10px; letter-spacing:.1em; color:var(--faint); cursor:pointer;
-  }
-  .imgSlot.loaded{border-style:solid; border-color:var(--led); color:var(--led);}
-  .imgSlot input{position:absolute; inset:0; opacity:0; cursor:pointer;}
-  .ptxt{
-    width:100%; margin-top:8px; background:var(--panel2); border:1px solid var(--line);
-    color:var(--ink); font-family:var(--mono); font-size:12px; padding:8px 10px; letter-spacing:.06em;
-    outline:none; resize:vertical;
-  }
-  .ptxt:focus{border-color:var(--led);}
-  .ptxt::placeholder{color:var(--faint);}
-  #lyricRow{display:flex; gap:8px; margin-top:8px;}
-  #lyricRow .tbtn{flex:1; position:relative; overflow:hidden; text-align:center;}
-  #lyricRow input[type=file]{position:absolute; inset:0; opacity:0; cursor:pointer;}
-  #globalNudge{display:flex; gap:8px; margin-top:8px;}
-  #globalNudge .tbtn{flex:1;}
-  #iconRow{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;}
-  #iconRow .tbtn{padding:5px 7px; font-size:9px; letter-spacing:.06em;}
-  #themeRow{display:flex; gap:8px; margin-top:6px; flex-wrap:wrap;}
-  #themeRow .tbtn{flex:1;}
-  #timeList{margin-top:8px; max-height:36vh; overflow-y:auto; display:flex; flex-direction:column; gap:2px;}
-  .trow{
-    display:flex; align-items:center; gap:5px; font-size:10px; color:var(--dim);
-    padding:3px 4px; background:var(--panel2); border:1px solid var(--line);
-  }
-  .trow.cur{border-color:var(--led);}
-  .trow.cur .ttime{color:var(--led);}
-  .trow .ttime{width:54px; flex-shrink:0; color:var(--ink); font-weight:700; letter-spacing:.02em;}
-  .trow .ttxt{flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-  .trow button{
-    background:var(--panel3); border:1px solid var(--line); color:var(--dim);
-    font-family:var(--mono); font-size:9px; padding:2px 5px; cursor:pointer; flex-shrink:0;
-  }
-  .trow button:hover{color:var(--ink); border-color:var(--faint);}
+    .tagline {
+      color: var(--faint);
+      font-size: 11px;
+      letter-spacing: .08em;
+    }
 
-  /* knobs */
-  #knobGrid{
-    display:grid; grid-template-columns:repeat(3,1fr); gap:16px 8px; margin-top:10px; justify-items:center;
-  }
-  .knob{display:flex; flex-direction:column; align-items:center; gap:6px; user-select:none;}
-  .knob .dial{
-    width:56px; height:56px; border-radius:50%; position:relative; cursor:ns-resize;
-    background:
-      radial-gradient(circle at 35% 30%, #2e2e33 0%, #1a1a1d 55%, #0f0f11 100%);
-    border:1px solid var(--line);
-    box-shadow: inset 0 2px 4px rgba(255,255,255,.05), 0 4px 10px rgba(0,0,0,.5);
-  }
-  .knob .dial::after{ /* tick ring */
-    content:''; position:absolute; inset:-5px; border-radius:50%;
-    border:1px solid var(--line); opacity:.5;
-  }
-  .knob .ind{
-    position:absolute; left:50%; top:50%; width:2px; height:22px;
-    background:var(--led); transform-origin:50% 0%; box-shadow:0 0 6px var(--led-dim);
-  }
-  .knob .klabel{font-size:9px; letter-spacing:.22em; color:var(--dim); font-weight:700;}
-  .knob .kval{font-size:10px; color:var(--faint); min-height:12px;}
-  .knob:hover .klabel{color:var(--ink);}
+    #status {
+      margin-left: auto;
+      font-size: 11px;
+      color: var(--dim);
+      letter-spacing: .06em;
+      text-align: right;
+    }
 
-  #diceRow{display:flex; gap:8px; margin-top:14px;}
-  #diceBtn{
-    flex:1; background:var(--panel2); border:1px solid var(--led); color:var(--led);
-    font-family:var(--mono); font-weight:800; letter-spacing:.22em; padding:12px; cursor:pointer; font-size:12px;
-  }
-  #diceBtn:hover{background:var(--led); color:#0d0d0f;}
-  #diceBtn:active{transform:translateY(1px);}
-  #seedTag{align-self:center; font-size:10px; color:var(--faint); letter-spacing:.08em; padding:0 6px;}
+    #status.rec {
+      color: var(--rec);
+    }
 
-  .note{font-size:10px; color:var(--faint); line-height:1.7; letter-spacing:.03em;}
-  .note b{color:var(--dim); font-weight:700;}
-</style>
+    #status.ok {
+      color: var(--ok);
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: 330px minmax(0, 1fr) 380px;
+      gap: 0;
+      height: calc(100vh - 49px);
+    }
+
+    @media (max-width:1100px) {
+      main {
+        grid-template-columns: 1fr;
+        height: auto;
+      }
+
+      #stage {
+        order: -1;
+      }
+
+      .rack {
+        border: none !important;
+        border-top: 1px solid var(--line) !important;
+      }
+    }
+
+    /* ---------- stage ---------- */
+    #stage {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 22px 22px 30px;
+      gap: 14px;
+      overflow-y: auto;
+      min-height: 0;
+      background:
+        radial-gradient(1200px 600px at 50% 0%, #131316 0%, #0d0d0f 70%);
+    }
+
+    #canvasWrap {
+      position: relative;
+      line-height: 0;
+    }
+
+    canvas#viz {
+      background: #000;
+      border: 1px solid var(--line);
+      max-height: calc(100vh - 230px);
+      max-width: 100%;
+      height: auto;
+      box-shadow: 0 0 0 1px #000, 0 18px 60px rgba(0, 0, 0, .55);
+    }
+
+    @media (max-width:1100px) {
+      canvas#viz {
+        max-height: 66vh;
+      }
+    }
+
+    #recDot {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--rec);
+      box-shadow: 0 0 10px var(--rec);
+      display: none;
+      animation: blink 1s steps(2) infinite;
+    }
+
+    @keyframes blink {
+      50% {
+        opacity: .25;
+      }
+    }
+
+    /* transport */
+    #transport {
+      width: 100%;
+      max-width: 560px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    #timeline {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    #playBtn {
+      width: 44px;
+      height: 36px;
+      background: var(--panel3);
+      border: 1px solid var(--line);
+      color: var(--ink);
+      cursor: pointer;
+      font-family: var(--mono);
+      font-size: 14px;
+    }
+
+    #playBtn:hover {
+      border-color: var(--led);
+    }
+
+    #seek {
+      flex: 1;
+      appearance: none;
+      height: 4px;
+      background: var(--panel3);
+      outline: none;
+      cursor: pointer;
+    }
+
+    #seek::-webkit-slider-thumb {
+      appearance: none;
+      width: 12px;
+      height: 18px;
+      background: var(--ink);
+      cursor: pointer;
+    }
+
+    #seek::-moz-range-thumb {
+      width: 12px;
+      height: 18px;
+      background: var(--ink);
+      border: none;
+      cursor: pointer;
+    }
+
+    #clock {
+      width: 96px;
+      text-align: right;
+      color: var(--dim);
+      font-size: 12px;
+      letter-spacing: .05em;
+    }
+
+    #clipRow {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .tbtn {
+      background: var(--panel2);
+      border: 1px solid var(--line);
+      color: var(--dim);
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: .08em;
+      padding: 7px 10px;
+      cursor: pointer;
+    }
+
+    .tbtn:hover {
+      color: var(--ink);
+      border-color: var(--faint);
+    }
+
+    .tbtn.active {
+      color: var(--led);
+      border-color: var(--led);
+    }
+
+    .spacer {
+      flex: 1;
+    }
+
+    #recBtn {
+      background: var(--panel2);
+      border: 1px solid var(--rec);
+      color: var(--rec);
+      font-weight: 700;
+      letter-spacing: .14em;
+      padding: 7px 16px;
+      cursor: pointer;
+      font-family: var(--mono);
+      font-size: 11px;
+    }
+
+    #recBtn:hover {
+      background: var(--rec);
+      color: #0d0d0f;
+    }
+
+    #recBtn:disabled {
+      opacity: .4;
+      cursor: not-allowed;
+    }
+
+    #exportBtn {
+      background: var(--panel2);
+      border: 1px solid var(--led);
+      color: var(--led);
+      font-weight: 700;
+      letter-spacing: .14em;
+      padding: 7px 16px;
+      cursor: pointer;
+      font-family: var(--mono);
+      font-size: 11px;
+    }
+
+    #exportBtn:hover {
+      background: var(--led);
+      color: #0d0d0f;
+    }
+
+    #clipInfo {
+      font-size: 11px;
+      color: var(--faint);
+      letter-spacing: .05em;
+    }
+
+    /* ---------- racks (left: setup · right: live controls) ---------- */
+    .rack {
+      background: var(--panel);
+      padding: 18px 18px 40px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      overflow-y: auto;
+      min-height: 0;
+    }
+
+    #rackL {
+      border-right: 1px solid var(--line);
+    }
+
+    #rackR {
+      border-left: 1px solid var(--line);
+    }
+
+    .section-label {
+      font-size: 10px;
+      letter-spacing: .28em;
+      color: var(--faint);
+      font-weight: 700;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 6px;
+    }
+
+    /* channel strips */
+    #tmplRow {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    #tmplRow .tbtn {
+      flex: 1;
+      padding: 6px 4px;
+      font-size: 10px;
+    }
+
+    .strip {
+      display: grid;
+      grid-template-columns: 78px 1fr 30px;
+      gap: 8px;
+      align-items: center;
+      padding: 7px 8px;
+      background: var(--panel2);
+      border: 1px solid var(--line);
+      margin-top: 6px;
+    }
+
+    .roleSel {
+      width: 78px;
+      background: var(--panel3);
+      border: 1px solid var(--line);
+      color: var(--dim);
+      font-family: var(--mono);
+      font-size: 9px;
+      letter-spacing: .08em;
+      font-weight: 700;
+      padding: 5px 2px;
+      cursor: pointer;
+      outline: none;
+    }
+
+    .roleSel:hover,
+    .strip.loaded .roleSel {
+      color: var(--led);
+      border-color: var(--faint);
+    }
+
+    .strip .fileLbl {
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      cursor: pointer;
+      min-width: 0;
+    }
+
+    .strip .fname {
+      font-size: 11px;
+      color: var(--faint);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .strip.loaded .fname {
+      color: var(--ink);
+    }
+
+    .strip input[type=file] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    .meter {
+      height: 3px;
+      background: var(--panel3);
+      position: relative;
+    }
+
+    .meter i {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 0%;
+      background: var(--led);
+      transition: none;
+    }
+
+    .mute {
+      width: 26px;
+      height: 26px;
+      background: var(--panel3);
+      border: 1px solid var(--line);
+      color: var(--faint);
+      font-size: 10px;
+      cursor: pointer;
+      font-family: var(--mono);
+    }
+
+    .mute.on {
+      color: var(--rec);
+      border-color: var(--rec);
+    }
+
+    /* assets + text */
+    .imgRow {
+      display: flex;
+      gap: 8px;
+      margin-top: 6px;
+    }
+
+    .imgSlot {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      background: var(--panel2);
+      border: 1px dashed var(--line);
+      padding: 10px 8px;
+      text-align: center;
+      font-size: 10px;
+      letter-spacing: .1em;
+      color: var(--faint);
+      cursor: pointer;
+    }
+
+    .imgSlot.loaded {
+      border-style: solid;
+      border-color: var(--led);
+      color: var(--led);
+    }
+
+    .imgSlot input {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    .ptxt {
+      width: 100%;
+      margin-top: 8px;
+      background: var(--panel2);
+      border: 1px solid var(--line);
+      color: var(--ink);
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 8px 10px;
+      letter-spacing: .06em;
+      outline: none;
+      resize: vertical;
+    }
+
+    .ptxt:focus {
+      border-color: var(--led);
+    }
+
+    .ptxt::placeholder {
+      color: var(--faint);
+    }
+
+    #lyricRow {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    #lyricRow .tbtn {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      text-align: center;
+    }
+
+    #lyricRow input[type=file] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    #globalNudge {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    #globalNudge .tbtn {
+      flex: 1;
+    }
+
+    #iconRow {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    #iconRow .tbtn {
+      padding: 5px 7px;
+      font-size: 9px;
+      letter-spacing: .06em;
+    }
+
+    #themeRow {
+      display: flex;
+      gap: 8px;
+      margin-top: 6px;
+      flex-wrap: wrap;
+    }
+
+    #themeRow .tbtn {
+      flex: 1;
+    }
+
+    #hookStyleRow {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+      flex-wrap: wrap;
+    }
+
+    #hookStyleRow .tbtn {
+      flex: 1;
+      padding: 6px 4px;
+      font-size: 10px;
+    }
+
+    #hookMetaRow {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    #hookMetaRow .tbtn {
+      flex: 1;
+    }
+
+    #timeList {
+      margin-top: 8px;
+      max-height: 36vh;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .trow {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 10px;
+      color: var(--dim);
+      padding: 3px 4px;
+      background: var(--panel2);
+      border: 1px solid var(--line);
+    }
+
+    .trow.cur {
+      border-color: var(--led);
+    }
+
+    .trow.cur .ttime {
+      color: var(--led);
+    }
+
+    .trow .ttime {
+      width: 54px;
+      flex-shrink: 0;
+      color: var(--ink);
+      font-weight: 700;
+      letter-spacing: .02em;
+    }
+
+    .trow .ttxt {
+      flex: 1;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .trow button {
+      background: var(--panel3);
+      border: 1px solid var(--line);
+      color: var(--dim);
+      font-family: var(--mono);
+      font-size: 9px;
+      padding: 2px 5px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .trow button:hover {
+      color: var(--ink);
+      border-color: var(--faint);
+    }
+
+    /* knobs */
+    #knobGrid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px 8px;
+      margin-top: 10px;
+      justify-items: center;
+    }
+
+    .knob {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      user-select: none;
+    }
+
+    .knob .dial {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      position: relative;
+      cursor: ns-resize;
+      background:
+        radial-gradient(circle at 35% 30%, #2e2e33 0%, #1a1a1d 55%, #0f0f11 100%);
+      border: 1px solid var(--line);
+      box-shadow: inset 0 2px 4px rgba(255, 255, 255, .05), 0 4px 10px rgba(0, 0, 0, .5);
+    }
+
+    .knob .dial::after {
+      /* tick ring */
+      content: '';
+      position: absolute;
+      inset: -5px;
+      border-radius: 50%;
+      border: 1px solid var(--line);
+      opacity: .5;
+    }
+
+    .knob .ind {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 2px;
+      height: 22px;
+      background: var(--led);
+      transform-origin: 50% 0%;
+      box-shadow: 0 0 6px var(--led-dim);
+    }
+
+    .knob .klabel {
+      font-size: 9px;
+      letter-spacing: .22em;
+      color: var(--dim);
+      font-weight: 700;
+    }
+
+    .knob .kval {
+      font-size: 10px;
+      color: var(--faint);
+      min-height: 12px;
+    }
+
+    .knob:hover .klabel {
+      color: var(--ink);
+    }
+
+    #diceRow {
+      display: flex;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    #diceBtn {
+      flex: 1;
+      background: var(--panel2);
+      border: 1px solid var(--led);
+      color: var(--led);
+      font-family: var(--mono);
+      font-weight: 800;
+      letter-spacing: .22em;
+      padding: 12px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    #diceBtn:hover {
+      background: var(--led);
+      color: #0d0d0f;
+    }
+
+    #diceBtn:active {
+      transform: translateY(1px);
+    }
+
+    #seedTag {
+      align-self: center;
+      font-size: 10px;
+      color: var(--faint);
+      letter-spacing: .08em;
+      padding: 0 6px;
+    }
+
+    .note {
+      font-size: 10px;
+      color: var(--faint);
+      line-height: 1.7;
+      letter-spacing: .03em;
+    }
+
+    .note b {
+      color: var(--dim);
+      font-weight: 700;
+    }
+  </style>
 </head>
+
 <body>
 
-<header>
-  <div class="wordmark">STEM<span class="v">VIS</span></div>
-  <div class="tagline">stem-reactive video unit · kinetic</div>
-  <div id="status">load stems to begin</div>
-</header>
+  <header>
+    <div class="wordmark">STEM<span class="v">VIS</span></div>
+    <div class="tagline">stem-reactive video unit · kinetic</div>
+    <div id="status">load stems to begin</div>
+  </header>
 
-<main>
-  <!-- ================= LEFT RACK — setup: stems + assets ================= -->
-  <aside class="rack" id="rackL">
-    <div>
-      <div class="section-label">CHANNELS — any stems, any song</div>
-      <div id="tmplRow"></div>
-      <div id="strips"></div>
-    </div>
-
-    <div>
-      <div class="section-label">ASSETS — images + fonts feed the shots</div>
-      <div class="imgRow">
-        <label class="imgSlot" id="imgASlot">IMAGE A<input type="file" id="imgAFile" accept="image/*"></label>
-        <label class="imgSlot" id="imgBSlot">IMAGE B<input type="file" id="imgBFile" accept="image/*"></label>
+  <main>
+    <!-- ================= LEFT RACK — setup: stems + assets ================= -->
+    <aside class="rack" id="rackL">
+      <div>
+        <div class="section-label">CHANNELS — any stems, any song</div>
+        <div id="tmplRow"></div>
+        <div id="strips"></div>
       </div>
-      <div class="imgRow">
-        <label class="imgSlot" id="fontASlot">FONT A<input type="file" id="fontAFile" accept=".ttf,.otf,.woff,.woff2"></label>
-        <label class="imgSlot" id="fontBSlot">FONT B<input type="file" id="fontBFile" accept=".ttf,.otf,.woff,.woff2"></label>
+
+      <div>
+        <div class="section-label">ASSETS — images + fonts feed the shots</div>
+        <div class="imgRow">
+          <label class="imgSlot" id="imgASlot">IMAGE A<input type="file" id="imgAFile" accept="image/*"></label>
+          <label class="imgSlot" id="imgBSlot">IMAGE B<input type="file" id="imgBFile" accept="image/*"></label>
+        </div>
+        <div class="imgRow">
+          <label class="imgSlot" id="fontASlot">FONT A<input type="file" id="fontAFile"
+              accept=".ttf,.otf,.woff,.woff2"></label>
+          <label class="imgSlot" id="fontBSlot">FONT B<input type="file" id="fontBFile"
+              accept=".ttf,.otf,.woff,.woff2"></label>
+        </div>
+        <textarea class="ptxt" id="wordsInput" rows="2" maxlength="400"
+          placeholder="WORDS — one per line or comma separated; cuts pick from these between lyric lines"
+          spellcheck="false"></textarea>
       </div>
-      <textarea class="ptxt" id="wordsInput" rows="2" maxlength="400"
-        placeholder="WORDS — one per line or comma separated; cuts pick from these between lyric lines"
-        spellcheck="false"></textarea>
-    </div>
 
-    <div>
-      <div class="section-label">FILLER — icon pool between lyric lines</div>
-      <div id="iconRow"></div>
-    </div>
-
-    <div class="note">
-      <b>flow:</b> export full-length aligned stems (or a 4-track split, or just the mix) →
-      pick a channel TEMPLATE, load audio, adjust any strip's role →
-      paste lyrics + TAP SYNC → play, THEME + DICE + knobs → SET IN at the hook → REC.
-      the visual hard-CUTS to a new shot every N kicks (<b>CUTS</b> knob: every 8 → every kick);
-      timed lyric lines force their own cut, and the FX stem forces cuts too.
-      kick pumps + strobes (<b>ENERGY</b>) · bass drives the <b>WARP</b> slice-melt · vox echoes the word ·
-      arps ripple letters · hats stutter + specks · clap flashes the border · chords breathe the colour ·
-      <b>SCRAMBLE</b> datamoshes everything. gaps between vocals fill from the <b>FILLER</b> icon pool
-      (+ WORDS + images) — toggle the chips to curate it.
-      <b>⇣ EXPORT</b> renders the clip offline — every frame perfect, no drops — use it for posting;
-      ● REC is the quick realtime preview (keep the tab visible while it runs).
-    </div>
-  </aside>
-
-  <!-- ================= STAGE ================= -->
-  <section id="stage">
-    <div id="canvasWrap">
-      <canvas id="viz" width="720" height="1280"></canvas>
-      <div id="recDot"></div>
-    </div>
-
-    <div id="transport">
-      <div id="timeline">
-        <button id="playBtn" title="space">►</button>
-        <input id="seek" type="range" min="0" max="100" step="0.01" value="0">
-        <div id="clock">0:00 / 0:00</div>
+      <div>
+        <div class="section-label">FILLER — icon pool between lyric lines</div>
+        <div id="iconRow"></div>
       </div>
-      <div id="clipRow">
-        <button class="tbtn" id="setInBtn" title="mark clip start at playhead">SET IN</button>
-        <button class="tbtn lenBtn active" data-len="15">15s</button>
-        <button class="tbtn lenBtn" data-len="30">30s</button>
-        <button class="tbtn lenBtn" data-len="60">60s</button>
-        <button class="tbtn lenBtn" data-len="full" title="record from the IN point to the end of the song — or hit STOP anytime">FULL</button>
-        <button class="tbtn" id="loopBtn" title="loop the clip region while you jam knobs">LOOP</button>
-        <span id="clipInfo">in 0:00 · 15s</span>
-        <span class="spacer"></span>
-        <button class="tbtn" id="resBtn" title="recording resolution">720p</button>
-        <button id="recBtn" title="quick realtime capture — may drop frames">● REC</button>
-        <button id="exportBtn" title="offline render: every frame perfect, no realtime drops — the post-quality path">⇣ EXPORT</button>
+
+      <div class="note">
+        <b>flow:</b> export full-length aligned stems (or a 4-track split, or just the mix) →
+        pick a channel TEMPLATE, load audio, adjust any strip's role →
+        paste lyrics + TAP SYNC → play, THEME + DICE + knobs → SET IN at the hook → REC.
+        the visual hard-CUTS to a new shot every N kicks (<b>CUTS</b> knob: every 8 → every kick);
+        timed lyric lines force their own cut, and the FX stem forces cuts too.
+        kick pumps + strobes (<b>ENERGY</b>) · bass drives the <b>WARP</b> slice-melt · vox echoes the word ·
+        arps ripple letters · hats stutter + specks · clap flashes the border · chords breathe the colour ·
+        <b>SCRAMBLE</b> datamoshes everything. gaps between vocals fill from the <b>FILLER</b> icon pool
+        (+ WORDS + images) — toggle the chips to curate it.
+        <b>⇣ EXPORT</b> renders the clip offline — every frame perfect, no drops — use it for posting;
+        ● REC is the quick realtime preview (keep the tab visible while it runs).
       </div>
-    </div>
-  </section>
+    </aside>
 
-  <!-- ================= RIGHT RACK — live controls: theme + knobs + lyrics ================= -->
-  <aside class="rack" id="rackR">
-    <div>
-      <div class="section-label">THEME — the aesthetic · knobs + DICE vary within it</div>
-      <div id="themeRow"></div>
-    </div>
-
-    <div>
-      <div class="section-label">MACROS — drag knobs vertically</div>
-      <div id="knobGrid"></div>
-      <div id="diceRow">
-        <button id="diceBtn">⟳ DICE — new arrangement</button>
-        <span id="seedTag"></span>
+    <!-- ================= STAGE ================= -->
+    <section id="stage">
+      <div id="canvasWrap">
+        <canvas id="viz" width="720" height="1280"></canvas>
+        <div id="recDot"></div>
       </div>
-    </div>
 
-    <div>
-      <div class="section-label">LYRICS — timed lines drive the cuts</div>
-      <textarea class="ptxt" id="lyricsInput" rows="5" maxlength="4000"
-        placeholder="paste lyrics, one line per cut — then TAP SYNC: play the song and hit ENTER as each line starts. or import an .lrc file. finish edits BEFORE tapping."
-        spellcheck="false"></textarea>
-      <div id="lyricRow">
-        <button class="tbtn" id="tapBtn" title="play the song, press ENTER (or L) at each line start">TAP SYNC</button>
-        <label class="tbtn" title="import a timestamped .lrc lyric file">IMPORT .LRC<input type="file" id="lrcFile" accept=".lrc,.txt"></label>
-        <button class="tbtn" id="clearTimesBtn" title="wipe all line timestamps">CLEAR TIMES</button>
+      <div id="transport">
+        <div id="timeline">
+          <button id="playBtn" title="space">►</button>
+          <input id="seek" type="range" min="0" max="100" step="0.01" value="0">
+          <div id="clock">0:00 / 0:00</div>
+        </div>
+        <div id="clipRow">
+          <button class="tbtn" id="setInBtn" title="mark clip start at playhead">SET IN</button>
+          <button class="tbtn lenBtn active" data-len="15">15s</button>
+          <button class="tbtn lenBtn" data-len="30">30s</button>
+          <button class="tbtn lenBtn" data-len="60">60s</button>
+          <button class="tbtn lenBtn" data-len="full"
+            title="record from the IN point to the end of the song — or hit STOP anytime">FULL</button>
+          <button class="tbtn" id="loopBtn" title="loop the clip region while you jam knobs">LOOP</button>
+          <span id="clipInfo">in 0:00 · 15s</span>
+          <span class="spacer"></span>
+          <button class="tbtn" id="resBtn" title="recording resolution">720p</button>
+          <button id="recBtn" title="quick realtime capture — may drop frames">● REC</button>
+          <button id="exportBtn"
+            title="offline render: every frame perfect, no realtime drops — the post-quality path">⇣ EXPORT</button>
+        </div>
       </div>
-      <div id="globalNudge">
-        <button class="tbtn" id="allEarlier" title="shift every timed line 0.1s earlier — fixes consistent tap lag (shift-click: 0.02s)">ALL −0.1s</button>
-        <button class="tbtn" id="allLater" title="shift every timed line 0.1s later (shift-click: 0.02s)">ALL +0.1s</button>
+    </section>
+
+    <!-- ================= RIGHT RACK — live controls: theme + knobs + lyrics ================= -->
+    <aside class="rack" id="rackR">
+      <div>
+        <div class="section-label">THEME — the aesthetic · knobs + DICE vary within it</div>
+        <div id="themeRow"></div>
       </div>
-      <div id="timeList"></div>
-    </div>
-  </aside>
-</main>
 
-<script>
-/* =====================================================================
-   STEMVIS — kinetic stem-reactive video generator
-   WebAudio analysers (1 per stem, peak-normalised) → envelope/onset →
-   cut-based shot renderer (type/stack/art/wall) + timed lyric lines →
-   6 macro knobs + seeded RNG → MediaRecorder capture.
-   ===================================================================== */
-'use strict';
+      <div>
+        <div class="section-label">MACROS — drag knobs vertically</div>
+        <div id="knobGrid"></div>
+        <div id="diceRow">
+          <button id="diceBtn">⟳ DICE — new arrangement</button>
+          <span id="seedTag"></span>
+        </div>
+      </div>
 
-/* ---------- utils ---------- */
-const $ = s => document.querySelector(s);
-const clamp = (v,a,b) => v<a?a:(v>b?b:v);
-const lerp = (a,b,t) => a+(b-a)*t;
-function mulberry32(seed){
-  return function(){
-    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
-    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
-    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-    return ((t ^ t >>> 14) >>> 0) / 4294967296;
-  };
-}
-const fmtT = s => { s=Math.max(0,s); const m=Math.floor(s/60), r=Math.floor(s%60); return m+':'+String(r).padStart(2,'0'); };
+      <div>
+        <div class="section-label">HOOK — stop the scroll in the first seconds</div>
+        <input class="ptxt" id="hookInput" type="text" maxlength="80" placeholder="hook line — e.g. wait for the drop…"
+          spellcheck="false">
+        <div id="hookStyleRow"></div>
+        <div id="hookMetaRow">
+          <button class="tbtn" id="hookIdeaBtn" title="cycle through proven hook line ideas">💡 IDEA</button>
+          <button class="tbtn hookLenBtn" data-hl="2">2s</button>
+          <button class="tbtn hookLenBtn active" data-hl="3">3s</button>
+          <button class="tbtn hookLenBtn" data-hl="5">5s</button>
+        </div>
+      </div>
 
-/* virtual clock: null → realtime; during offline export it is the song time
-   of the frame being rendered, so cuts/decays land identically off-clock */
-let renderClock = null;
-const clockNow = () => renderClock!==null ? renderClock : performance.now()/1000;
+      <div>
+        <div class="section-label">LYRICS — timed lines drive the cuts</div>
+        <textarea class="ptxt" id="lyricsInput" rows="5" maxlength="4000"
+          placeholder="paste lyrics, one line per cut — then TAP SYNC: play the song and hit ENTER as each line starts. or import an .lrc file. finish edits BEFORE tapping."
+          spellcheck="false"></textarea>
+        <div id="lyricRow">
+          <button class="tbtn" id="tapBtn" title="play the song, press ENTER (or L) at each line start">TAP
+            SYNC</button>
+          <label class="tbtn" title="import a timestamped .lrc lyric file">IMPORT .LRC<input type="file" id="lrcFile"
+              accept=".lrc,.txt"></label>
+          <button class="tbtn" id="clearTimesBtn" title="wipe all line timestamps">CLEAR TIMES</button>
+        </div>
+        <div id="globalNudge">
+          <button class="tbtn" id="allEarlier"
+            title="shift every timed line 0.1s earlier — fixes consistent tap lag (shift-click: 0.02s)">ALL
+            −0.1s</button>
+          <button class="tbtn" id="allLater" title="shift every timed line 0.1s later (shift-click: 0.02s)">ALL
+            +0.1s</button>
+        </div>
+        <div id="timeList"></div>
+      </div>
+    </aside>
+  </main>
 
-/* ---------- state ---------- */
-/* channel slots — any song, any stems. a slot's REACTION ROLE decides what
-   its audio drives visually. templates preset the mapping in one click;
-   the per-strip selector gives full control when you want it. */
-const ROLE_DEFS = [
-  {key:'kick',   label:'PUNCH',  tip:'pumps the frame, strobes, drives the cuts'},
-  {key:'bass',   label:'GROOVE', tip:'warp slice-melt, row slides'},
-  {key:'clap',   label:'SNAP',   tip:'frame + border flash'},
-  {key:'hats',   label:'TICK',   tip:'camera stutter + ink specks'},
-  {key:'chords', label:'WASH',   tip:'background colour breathing'},
-  {key:'arps',   label:'SPARK',  tip:'letter ripple, satellite kicks'},
-  {key:'vox',    label:'VOICE',  tip:'type swell + word echoes'},
-  {key:'fx',     label:'BREAK',  tip:'glitch storm + forced cuts'},
-  {key:'mix',    label:'MIX',    tip:'a full mix drives punch/groove/wash/voice at once'},
-  {key:'off',    label:'OFF',    tip:'audio plays but drives nothing'},
-];
-const TEMPLATES = [
-  {label:'8 STEMS', roles:['kick','bass','clap','hats','chords','arps','vox','fx']},
-  {label:'4-TRACK', roles:['kick','bass','chords','vox','off','off','off','off']},
-  {label:'1 FILE',  roles:['mix','off','off','off','off','off','off','off']},
-];
-const slots = TEMPLATES[0].roles.map(role=>({role, buffer:null, mute:false}));
-const MIX_ROLES = {kick:1, bass:1, chords:1, vox:1};   // what a MIX slot feeds
-let actx = null, masterGain = null, recDest = null;
-let duration = 0;
-let playing = false, startCtxTime = 0, startOffset = 0;
-let clipIn = 0, clipLen = 15, loopClip = false;   // clipLen: seconds, or 'full' (to end of song)
-let recording = false, recorder = null, recChunks = [], recMime = '', recSecs = 0;
-const clipEndT = () => clipLen==='full' ? duration : clipIn + clipLen;
-let recW = 720, recH = 1280, hiRes = false;
+  <script>
+    /* =====================================================================
+       STEMVIS — kinetic stem-reactive video generator
+       WebAudio analysers (1 per stem, peak-normalised) → envelope/onset →
+       cut-based shot renderer (type/stack/art/wall) + timed lyric lines →
+       6 macro knobs + seeded RNG → MediaRecorder capture.
+       ===================================================================== */
+    'use strict';
 
-const params = { energy:.7, cuts:.5, warp:.35, scramble:.12, hue:.58, style:.5, size:.45 };
-let seed = (Math.random()*1e9)|0;
-let rng = mulberry32(seed);
-
-/* kinetic shot state — DICE resets, every cut regenerates.
-   layoutBias makes each seed structurally different (composition anchor,
-   overall scale, drift), not just a different shot order. */
-let shot = null, shotIdx = 0, kickCount = 0, lastCutReal = 0, cutFlash = 0, layoutBias = null;
-function reseed(newSeed){
-  seed = newSeed===undefined ? (Math.random()*1e9)|0 : newSeed;
-  rng = mulberry32(seed);
-  layoutBias = {
-    align: ['center','center','left','right'][(rng()*4)|0],
-    scale: .68 + rng()*.42,
-    xDrift: (rng()*2-1)*.1,
-  };
-  shot = null; shotIdx = 0;
-  $('#seedTag').textContent = 'seed '+seed.toString(36);
-}
-reseed();
-
-/* ---------- audio engine ---------- */
-function ensureCtx(){
-  if(actx) return;
-  actx = new (window.AudioContext||window.webkitAudioContext)();
-  masterGain = actx.createGain();
-  masterGain.connect(actx.destination);
-  recDest = actx.createMediaStreamDestination();
-  masterGain.connect(recDest);
-}
-async function loadStem(idx, file, stripEl){
-  ensureCtx();
-  setStatus('decoding '+file.name+' …');
-  const buf = await file.arrayBuffer();
-  let audio;
-  try{ audio = await actx.decodeAudioData(buf); }
-  catch(e){ setStatus('could not decode '+file.name, 'rec'); return; }
-  const wasPlaying = playing; if(playing) stopAll();
-  const s = slots[idx];
-  s.buffer = audio; s.name = file.name;
-  s.gain = actx.createGain();
-  s.analyser = actx.createAnalyser();
-  s.analyser.fftSize = 1024; s.analyser.smoothingTimeConstant = .5;
-  s.timeData = new Float32Array(s.analyser.fftSize);
-  s.freqData = new Uint8Array(s.analyser.frequencyBinCount);
-  s.env = 0; s.prevRms = 0; s.peak = 0; s.onset = false; s.lastOnsetT = 0; s.centroid = .5;
-  s.gain.connect(s.analyser); s.analyser.connect(masterGain);
-  s.gain.gain.value = s.mute ? 0 : 1;
-  duration = Math.max(...slots.map(x=>x.buffer?x.buffer.duration:0));
-  $('#seek').max = duration;
-  stripEl.classList.add('loaded');
-  stripEl.querySelector('.fname').textContent = file.name;
-  const rd = ROLE_DEFS.find(r=>r.key===s.role);
-  setStatus(file.name+' loaded → '+(rd?rd.label:'SLOT '+(idx+1)), 'ok');
-  updateClock();
-  if(wasPlaying) playAll(startOffset);
-}
-function playAll(offset){
-  if(exporting) return;
-  ensureCtx();
-  if(actx.state==='suspended') actx.resume();
-  const loaded = slots.filter(s=>s.buffer);
-  if(!loaded.length){ setStatus('load at least one stem first','rec'); return; }
-  offset = clamp(offset||0, 0, Math.max(0,duration-.05));
-  for(const s of loaded){
-    s.src = actx.createBufferSource();
-    s.src.buffer = s.buffer;
-    s.src.connect(s.gain);
-    if(offset < s.buffer.duration) s.src.start(0, offset);
-  }
-  startCtxTime = actx.currentTime; startOffset = offset;
-  playing = true; $('#playBtn').textContent='❚❚';
-}
-function stopAll(){
-  for(const s of slots){
-    if(s.src){ try{s.src.stop();}catch(e){} s.src.disconnect(); s.src=null; }
-  }
-  playing = false; $('#playBtn').textContent='►';
-}
-function playhead(){
-  if(renderClock!==null) return renderClock;
-  return playing ? startOffset + (actx.currentTime - startCtxTime) : startOffset;
-}
-function seekTo(t){
-  const was = playing; stopAll();
-  startOffset = clamp(t,0,duration);
-  if(was) playAll(startOffset);
-}
-
-/* ---------- feature extraction ---------- */
-function analyse(dt){
-  const now = performance.now()/1000;
-  for(const s of slots){
-    if(!s.buffer || !s.analyser){ continue; }
-    s.analyser.getFloatTimeDomainData(s.timeData);
-    let sum=0;
-    for(let i=0;i<s.timeData.length;i+=2) sum += s.timeData[i]*s.timeData[i];
-    const rms = Math.sqrt(sum/(s.timeData.length/2));
-    // running peak (halves every ~2.5s) normalises per-stem loudness → 0..1
-    s.peak = Math.max(s.peak * Math.pow(.5, dt/2.5), rms);
-    const nrm = s.peak > .006 ? clamp(rms/s.peak, 0, 1) : 0;
-    // envelope: instant attack, smooth release
-    s.env = nrm > s.env ? nrm : lerp(s.env, nrm, 1-Math.pow(.001, dt*3));
-    // onset: relative jump vs recent level + refractory window
-    s.onset = false;
-    const jump = nrm - s.prevRms;
-    if(jump > 0.2 && nrm > 0.3 && (now - s.lastOnsetT) > 0.085){
-      s.onset = true; s.lastOnsetT = now;
+    /* ---------- utils ---------- */
+    const $ = s => document.querySelector(s);
+    const clamp = (v, a, b) => v < a ? a : (v > b ? b : v);
+    const lerp = (a, b, t) => a + (b - a) * t;
+    function mulberry32(seed) {
+      return function () {
+        seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+        let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      };
     }
-    s.prevRms = lerp(s.prevRms, nrm, .55);
-    // spectral centroid (brightness / rough pitch height)
-    s.analyser.getByteFrequencyData(s.freqData);
-    let num=0, den=0;
-    const N = s.freqData.length;
-    for(let i=2;i<N;i++){ num += i*s.freqData[i]; den += s.freqData[i]; }
-    if(den>40) s.centroid = lerp(s.centroid, clamp((num/den)/(N*.45),0,1), .3);
-  }
-}
-/* role queries aggregate every slot assigned that role; MIX slots feed several */
-function env(role){
-  let m = 0;
-  for(const s of slots){
-    if(!s.buffer || s.mute) continue;
-    if(s.role===role || (s.role==='mix' && MIX_ROLES[role])) m = Math.max(m, s.env);
-  }
-  return m;
-}
-function hit(role){
-  for(const s of slots){
-    if(!s.buffer || s.mute) continue;
-    if((s.role===role || (s.role==='mix' && role==='kick')) && s.onset) return true;
-  }
-  return false;
-}
+    const fmtT = s => { s = Math.max(0, s); const m = Math.floor(s / 60), r = Math.floor(s % 60); return m + ':' + String(r).padStart(2, '0'); };
 
-/* ---------- renderer ---------- */
-const cv = $('#viz'), ctx2d = cv.getContext('2d', {alpha:false});
-let sparks = [], voxRings = [], punch = 0, glitch = 0, clapFlash = 0, tGlobal = 0, lastFrame = performance.now();
-let dotPat = null, grainPat = null;   // cached canvas patterns
-let imgA = null, imgB = null;
-const GLYPHS = '#%&@$0X§?!';
+    /* virtual clock: null → realtime; during offline export it is the song time
+       of the frame being rendered, so cuts/decays land identically off-clock */
+    let renderClock = null;
+    const clockNow = () => renderClock !== null ? renderClock : performance.now() / 1000;
 
-/* grain texture */
-const grainCv = document.createElement('canvas'); grainCv.width=grainCv.height=140;
-(function(){
-  const g = grainCv.getContext('2d'), id = g.createImageData(140,140);
-  for(let i=0;i<id.data.length;i+=4){ const v = 118+Math.random()*70|0; id.data[i]=id.data[i+1]=id.data[i+2]=v; id.data[i+3]=255; }
-  g.putImageData(id,0,0);
-})();
+    /* ---------- state ---------- */
+    /* channel slots — any song, any stems. a slot's REACTION ROLE decides what
+       its audio drives visually. templates preset the mapping in one click;
+       the per-strip selector gives full control when you want it. */
+    const ROLE_DEFS = [
+      { key: 'kick', label: 'PUNCH', hint: 'kick / drums', tip: 'pumps the frame, strobes, drives the cuts' },
+      { key: 'bass', label: 'GROOVE', hint: 'bass / 808', tip: 'frame bounce, warp slice-melt, row slides' },
+      { key: 'clap', label: 'SNAP', hint: 'clap / snare', tip: 'frame + border flash' },
+      { key: 'hats', label: 'TICK', hint: 'hats / shakers / percs', tip: 'camera stutter + ink specks' },
+      { key: 'chords', label: 'WASH', hint: 'chords / pads / synths', tip: 'background colour breathing' },
+      { key: 'arps', label: 'SPARK', hint: 'arps / leads / plucks', tip: 'letter ripple, satellite kicks' },
+      { key: 'vox', label: 'VOICE', hint: 'vocals / vocal chops', tip: 'type swell + word echoes' },
+      { key: 'fx', label: 'BREAK', hint: 'FX / risers / impacts', tip: 'glitch storm + forced cuts' },
+      { key: 'mix', label: 'MIX', hint: 'the FULL SONG (one file)', tip: 'a full mix drives punch/groove/wash/voice at once' },
+      { key: 'off', label: 'OFF', hint: 'anything — no visuals', tip: 'audio plays but drives nothing' },
+    ];
+    const TEMPLATES = [
+      { label: '8 STEMS', roles: ['kick', 'bass', 'clap', 'hats', 'chords', 'arps', 'vox', 'fx'] },
+      { label: '4-TRACK', roles: ['kick', 'bass', 'chords', 'vox', 'off', 'off', 'off', 'off'] },
+      { label: '1 FILE', roles: ['mix', 'off', 'off', 'off', 'off', 'off', 'off', 'off'] },
+    ];
+    const slots = TEMPLATES[0].roles.map(role => ({ role, buffer: null, mute: false }));
+    const MIX_ROLES = { kick: 1, bass: 1, chords: 1, vox: 1 };   // what a MIX slot feeds
+    let actx = null, masterGain = null, recDest = null;
+    let duration = 0;
+    let playing = false, startCtxTime = 0, startOffset = 0;
+    let clipIn = 0, clipLen = 15, loopClip = false;   // clipLen: seconds, or 'full' (to end of song)
+    let recording = false, recorder = null, recChunks = [], recMime = '', recSecs = 0;
+    const clipEndT = () => clipLen === 'full' ? duration : clipIn + clipLen;
+    let recW = 720, recH = 1280, hiRes = false;
 
-/* halftone dot-screen tile (print theme) */
-const dotCv = document.createElement('canvas'); dotCv.width=dotCv.height=96;
-(function(){
-  const g = dotCv.getContext('2d');
-  g.fillStyle='#808080'; g.fillRect(0,0,96,96);
-  g.fillStyle='#2c2c2c';
-  for(let y=0;y<=96;y+=6) for(let x=0;x<=96;x+=6){
-    g.beginPath(); g.arc(x+((y/6)%2?3:0), y, 1.5, 0, Math.PI*2); g.fill();
-  }
-})();
+    const params = { energy: .7, cuts: .5, warp: .35, scramble: .12, hue: .58, style: .5, size: .45 };
+    let seed = (Math.random() * 1e9) | 0;
+    let rng = mulberry32(seed);
 
-function baseHue(){ return params.hue*360; }
-const withA = (c,a)=>c.replace('hsl(','hsla(').replace(')',`,${a})`);
-
-/* ---------- themes: named aesthetics ----------
-   a theme bundles palette recipe, image treatment, type voice, post texture,
-   motion feel, and shot-mode weights. DICE + knobs vary WITHIN a theme, so
-   re-running the same song under a different theme gives a different video.
-   add new aesthetics here — this is the main growth surface. */
-const THEMES = {
-  mono: { label:'MONO',       // bold b&w kinetic — the original
-    weights:{icon:2, iconField:1, type:2, stack:2, wall:1, art:2},
-    serif:0, italic:0, glow:0, aura:0, halftone:0, strobe:1, soft:0, motion:1,
-    duo:{hueOff:0, loS:45, loL:8, hiS:30, hiL:82},
-  },
-  occult: { label:'OCCULT',   // near-black, glowing halo ring, serif, icon-heavy
-    weights:{icon:4, iconField:1, type:2, stack:1, wall:0, art:2},
-    serif:1, italic:0, glow:1, aura:1, halftone:0, strobe:0, soft:1, motion:.8,
-    duo:{hueOff:8, loS:60, loL:6, hiS:75, hiL:60},
-  },
-  print: { label:'PRINT',     // saturated colour fields + halftone dot screen
-    weights:{icon:2, iconField:2, type:2, stack:1, wall:2, art:4},
-    serif:0, italic:0, glow:0, aura:0, halftone:1, strobe:1, soft:0, motion:1,
-    duo:{hueOff:-6, loS:75, loL:14, hiS:20, hiL:88},
-  },
-};
-let themeKey = 'mono';
-
-/* fonts (user .ttf/.otf files) + duotone image cache */
-let fontAFam = null, fontBFam = null, fontN = 0;
-function kinFont(px, useB){
-  const fam = useB ? (fontBFam||fontAFam) : (fontAFam||fontBFam);
-  const T = THEMES[themeKey];
-  const fb = T.serif ? '"Didot","Bodoni 72",Georgia,serif' : '"Arial Black","Helvetica Neue",Helvetica,Impact,sans-serif';
-  return `${T.italic?'italic ':''}${T.serif?800:900} ${px}px ${fam?`"${fam}",`:''}${fb}`;
-}
-function fitPx(txt, fontFn, target){
-  ctx2d.font = fontFn(100);
-  return clamp(100*target/Math.max(ctx2d.measureText(txt).width,1), 10, 900);
-}
-function splitBalanced(txt){
-  if(txt.length<=13 || !txt.includes(' ')) return [txt];
-  const mid = txt.length/2;
-  let best=-1, bd=1e9;
-  for(let i=0;i<txt.length;i++) if(txt[i]===' '){ const d=Math.abs(i-mid); if(d<bd){bd=d; best=i;} }
-  return [txt.slice(0,best), txt.slice(best+1)];
-}
-/* ---------- filler pool: vector icon painters ----------
-   what plays between lyric lines. each entry is a self-contained painter —
-   this is the plug-point for richer filler scenes later (animated sequences,
-   image collages, …): add a painter + a shot mode that uses it. */
-const ICON_LIST = ['star','sparkle','burst','cross','ring','target','diamond','bolt','heart','flower','arrow','spiral'];
-const STROKE_ICONS = {burst:1, ring:1, target:1, spiral:1};
-let iconPool = new Set(['star','sparkle','burst','cross','ring','flower']);
-function iconPath(id, s){
-  ctx2d.beginPath();
-  if(id==='star'){ for(let i=0;i<10;i++){ const a=i*Math.PI/5-Math.PI/2, rr=i%2?s*.45:s; i?ctx2d.lineTo(Math.cos(a)*rr,Math.sin(a)*rr):ctx2d.moveTo(Math.cos(a)*rr,Math.sin(a)*rr); } ctx2d.closePath(); }
-  else if(id==='sparkle'){ for(let i=0;i<8;i++){ const a=i*Math.PI/4-Math.PI/2, rr=i%2?s*.22:s; i?ctx2d.lineTo(Math.cos(a)*rr,Math.sin(a)*rr):ctx2d.moveTo(Math.cos(a)*rr,Math.sin(a)*rr); } ctx2d.closePath(); }
-  else if(id==='burst'){ for(let i=0;i<8;i++){ const a=i*Math.PI/4; ctx2d.moveTo(Math.cos(a)*s*.25,Math.sin(a)*s*.25); ctx2d.lineTo(Math.cos(a)*s,Math.sin(a)*s); } }
-  else if(id==='cross'){ ctx2d.rect(-s*.26,-s,s*.52,s*2); ctx2d.rect(-s,-s*.26,s*2,s*.52); }
-  else if(id==='ring'){ ctx2d.arc(0,0,s*.8,0,Math.PI*2); }
-  else if(id==='target'){ ctx2d.arc(0,0,s*.85,0,Math.PI*2); ctx2d.moveTo(s*.45,0); ctx2d.arc(0,0,s*.45,0,Math.PI*2); ctx2d.moveTo(s*.1,0); ctx2d.arc(0,0,s*.1,0,Math.PI*2); }
-  else if(id==='diamond'){ ctx2d.moveTo(0,-s); ctx2d.lineTo(s*.68,0); ctx2d.lineTo(0,s); ctx2d.lineTo(-s*.68,0); ctx2d.closePath(); }
-  else if(id==='bolt'){ ctx2d.moveTo(s*.25,-s); ctx2d.lineTo(-s*.4,s*.12); ctx2d.lineTo(-s*.02,s*.12); ctx2d.lineTo(-s*.25,s); ctx2d.lineTo(s*.4,-s*.12); ctx2d.lineTo(s*.02,-s*.12); ctx2d.closePath(); }
-  else if(id==='heart'){ ctx2d.moveTo(0,s*.55); ctx2d.bezierCurveTo(-s*1.1,-s*.15,-s*.55,-s*.95,0,-s*.35); ctx2d.bezierCurveTo(s*.55,-s*.95,s*1.1,-s*.15,0,s*.55); }
-  else if(id==='flower'){
-    for(let i=0;i<6;i++){ const a=i*Math.PI/3, px=Math.cos(a)*s*.55, py=Math.sin(a)*s*.55; ctx2d.moveTo(px+s*.34,py); ctx2d.arc(px,py,s*.34,0,Math.PI*2); }
-    ctx2d.moveTo(s*.16,0); ctx2d.arc(0,0,s*.16,0,Math.PI*2);
-  }
-  else if(id==='arrow'){ ctx2d.moveTo(0,-s); ctx2d.lineTo(s*.6,-s*.25); ctx2d.lineTo(s*.22,-s*.25); ctx2d.lineTo(s*.22,s); ctx2d.lineTo(-s*.22,s); ctx2d.lineTo(-s*.22,-s*.25); ctx2d.lineTo(-s*.6,-s*.25); ctx2d.closePath(); }
-  else if(id==='spiral'){ for(let t=0;t<=Math.PI*5;t+=.2){ const rr=s*t/(Math.PI*5); t?ctx2d.lineTo(Math.cos(t)*rr,Math.sin(t)*rr):ctx2d.moveTo(0,0); } }
-}
-function paintIcon(id, s, col, accCol, treat){
-  const strokeOnly = STROKE_ICONS[id] || treat===1;
-  ctx2d.lineWidth = Math.max(2, s*.09);
-  if(treat===2 && !strokeOnly){
-    ctx2d.save(); ctx2d.translate(s*.08,s*.08);
-    iconPath(id,s); ctx2d.fillStyle = accCol; ctx2d.fill();
-    ctx2d.restore();
-  }
-  iconPath(id, s);
-  if(strokeOnly){ ctx2d.strokeStyle = col; ctx2d.stroke(); }
-  else { ctx2d.fillStyle = col; ctx2d.fill(); }
-}
-
-function hsl2rgb(h,s,l){
-  s/=100; l/=100;
-  const k = n => (n + h/30) % 12;
-  const a = s*Math.min(l,1-l);
-  const f = n => l - a*Math.max(-1, Math.min(k(n)-3, 9-k(n), 1));
-  return [f(0)*255, f(8)*255, f(4)*255];
-}
-const duoCache = new WeakMap();
-function duotone(img){
-  // remap image luminance onto the theme's shadow→highlight pair (hue knob rotates it)
-  const key = themeKey+'|'+Math.round(params.hue*24)+'|'+Math.round(params.style*10);
-  const c = duoCache.get(img);
-  if(c && (c.key===key || performance.now()-c.at < 250)) return c.cv;
-  const D = THEMES[themeKey].duo;
-  const dh = (baseHue()+D.hueOff+360)%360;
-  const lo = hsl2rgb(dh, D.loS, D.loL), hi = hsl2rgb(dh, D.hiS+params.style*15, D.hiL);
-  const w = Math.min(img.width,1080), h = Math.round(img.height*w/img.width);
-  const oc = document.createElement('canvas'); oc.width=w; oc.height=h;
-  const g = oc.getContext('2d');
-  g.drawImage(img,0,0,w,h);
-  const id = g.getImageData(0,0,w,h), d = id.data;
-  for(let i=0;i<d.length;i+=4){
-    const t = (d[i]*.299+d[i+1]*.587+d[i+2]*.114)/255;
-    d[i]=lo[0]+(hi[0]-lo[0])*t; d[i+1]=lo[1]+(hi[1]-lo[1])*t; d[i+2]=lo[2]+(hi[2]-lo[2])*t;
-  }
-  g.putImageData(id,0,0);
-  duoCache.set(img,{key, cv:oc, at:performance.now()});
-  return oc;
-}
-
-/* ---------- lyrics: paste lines → tap-sync timestamps → lines drive cuts ---------- */
-let lyricLines = [], lyricTimes = [], lyricIdx = -1, tapping = false, tapIdx = 0;
-function syncLyricLines(){
-  lyricLines = $('#lyricsInput').value.split('\n').map(s=>s.trim()).filter(Boolean);
-  lyricTimes.length = lyricLines.length;
-}
-function currentLyric(){
-  const ph = playhead();
-  let idx = -1;
-  for(let i=0;i<lyricLines.length;i++){
-    const t = lyricTimes[i];
-    if(t==null) continue;
-    if(t<=ph) idx=i; else break;
-  }
-  if(idx>=0){ // a line holds until the next timed line or 8s, whichever first
-    let next = null;
-    for(let j=idx+1;j<lyricLines.length;j++){ if(lyricTimes[j]!=null){ next=lyricTimes[j]; break; } }
-    const end = Math.min(next==null ? lyricTimes[idx]+8 : next, lyricTimes[idx]+8);
-    if(ph > end) idx = -1;
-  }
-  return idx;
-}
-function parseLRC(txt){
-  const ls=[], ts=[];
-  for(const raw of txt.split('\n')){
-    const m = raw.match(/\[(\d+):(\d+(?:\.\d+)?)\](.*)/);
-    if(!m) continue;
-    const line = m[3].trim();
-    if(line){ ls.push(line); ts.push((+m[1])*60 + parseFloat(m[2])); }
-  }
-  return {ls, ts};
-}
-function saveLocal(){
-  try{ localStorage.setItem('stemvis', JSON.stringify({
-    words:$('#wordsInput').value, lyr:$('#lyricsInput').value, times:lyricTimes, icons:[...iconPool], theme:themeKey, roles:slots.map(s=>s.role)
-  })); }catch(e){}
-}
-function loadLocal(){
-  try{
-    const d = JSON.parse(localStorage.getItem('stemvis')||'{}');
-    if(d.words) $('#wordsInput').value = d.words;
-    if(d.lyr) $('#lyricsInput').value = d.lyr;
-    syncLyricLines();
-    if(Array.isArray(d.times)) for(let i=0;i<lyricLines.length;i++) lyricTimes[i] = d.times[i] ?? null;
-    if(Array.isArray(d.icons)) iconPool = new Set(d.icons.filter(i=>ICON_LIST.includes(i)));
-    if(d.theme && THEMES[d.theme]) themeKey = d.theme;
-    if(Array.isArray(d.roles)) d.roles.forEach((r,i)=>{
-      if(slots[i] && ROLE_DEFS.some(x=>x.key===r)) slots[i].role = r;
-    });
-  }catch(e){}
-}
-
-/* ---------- KINETIC renderer — cut-based shots ----------
-   the composition hard-cuts to a new seeded shot every N kicks (CUTS),
-   on every timed lyric line, and whenever the FX stem hits.
-   modes: type (huge word) · stack (word rows) · art (full-bleed duotone) · wall (word grid) */
-function kinWords(){
-  const raw = $('#wordsInput').value.trim();
-  return raw ? raw.split(/[\n,]/).map(s=>s.trim()).filter(Boolean) : [];
-}
-function newShot(){
-  shotIdx++;
-  const r = mulberry32((seed ^ (shotIdx*0x9E3779B9))|0);
-  const words = kinWords();
-  const icons = [...iconPool];
-  const lyricOn = lyricIdx>=0 && lyricLines[lyricIdx];
-  let mode, word = '';
-  if(lyricOn){
-    mode = r()<.72 ? 'type' : 'art';
-    word = lyricLines[lyricIdx];
-  } else {
-    /* filler: icons + WORDS + images, weighted by the theme — never stray lyric lines */
-    const wts = THEMES[themeKey].weights;
-    const cands = [];
-    const push = (m,w)=>{ for(let i=0;i<w;i++) cands.push(m); };
-    if(icons.length){ push('icon',wts.icon); push('iconField',wts.iconField); }
-    if(words.length){ push('type',wts.type); push('stack',wts.stack); push('wall',wts.wall); }
-    if(imgA||imgB) push('art',wts.art);
-    if(!cands.length) cands.push('type');
-    mode = cands[(r()*cands.length)|0];
-    if(words.length) word = words[(r()*words.length)|0];
-  }
-  shot = {
-    mode, word,
-    icon: icons.length ? icons[(r()*icons.length)|0] : null,
-    inv: r()<.35,
-    vert: !lyricOn && r()<.18,
-    tilt: (r()*2-1)*.06,
-    y: .3+r()*.4,
-    zDir: r()<.55?1:-1,
-    spin: (r()*2-1)*.7,
-    sats: r()<.45 ? 4+(r()*4|0) : 0,
-    bands: r()<.25 ? 2+(r()*3|0) : 0,
-    bar: r()<.5,
-    treat: (r()*3)|0,            // 0 fill · 1 outline · 2 offset-shadow
-    align: r()<.55 ? layoutBias.align : ['center','left','right'][(r()*3)|0],
-    scale: clamp(layoutBias.scale*(.8+r()*.45), .5, 1.15),
-    frame: r()<.18,
-    xo: layoutBias.xDrift + (r()*2-1)*.08,
-    useB: !!fontBFam && r()<.5,
-    imgPick: r()<.5,
-    _px: 0,
-  };
-  if(shot.mode==='art' && !imgA && !imgB) shot.mode = shot.icon ? 'icon' : 'type';
-  if(/type|stack|wall/.test(shot.mode) && !shot.word) shot.word = 'STEMVIS';
-  cutFlash = 1; lastCutReal = clockNow();
-}
-function shotImg(){ return shot.imgPick ? (imgA||imgB) : (imgB||imgA); }
-
-function drawKinetic(dt){
-  const W=cv.width, H=cv.height, cx=W/2, cy=H/2, mn=Math.min(W,H);
-  const bh = baseHue();
-  const T = THEMES[themeKey];
-  const szMul = .5 + params.size*.9;   // SIZE knob: .5× … 1.4× type/icon scale
-  const bE=env('bass'), vE=env('vox'), aE=env('arps'), hE=env('hats'), chE=env('chords');
-
-  /* lyric lines force cuts with their text */
-  const li = (playing || renderClock!==null) ? currentLyric() : -1;
-  if(li !== lyricIdx){ lyricIdx = li; if(li>=0) newShot(); }
-
-  /* cuts: every N kicks (CUTS), fx forces, timeout fallback */
-  const nowS = clockNow();
-  const cutEvery = params.cuts>.75?1 : params.cuts>.5?2 : params.cuts>.25?4 : 8;
-  if(hit('kick')){ kickCount++; if(kickCount%cutEvery===0) newShot(); }
-  if(hit('fx')) newShot();
-  if(!shot || nowS-lastCutReal > 9-7*params.cuts) newShot();
-  cutFlash = Math.max(0, cutFlash - dt*10);
-  if(hit('vox') && voxRings.length<6) voxRings.push({age:0});
-
-  /* palette — theme recipe, STYLE morphs it, CHORDS breathe it */
-  const st = params.style;
-  let bg, ink, acc;
-  if(themeKey==='occult'){
-    bg = `hsl(${bh},${30+st*40}%,${3+chE*5}%)`;
-    ink = `hsl(${bh},${55+st*30}%,${62+chE*8}%)`;
-    acc = `hsl(${(bh+18)%360},95%,60%)`;
-  } else if(themeKey==='print'){
-    bg = `hsl(${bh},${45+st*40}%,${18+st*22+chE*8}%)`;
-    ink = `hsl(${bh},18%,94%)`;
-    acc = `hsl(${(bh+150)%360},90%,${60+st*15}%)`;
-  } else { /* mono: STYLE walks b&w → tinted dark → full colour field */
-    if(st<.33){ bg=`hsl(${bh},${(chE*25)|0}%,${4+chE*7}%)`; ink=`hsl(${bh},6%,93%)`; acc=`hsl(${bh},90%,58%)`; }
-    else if(st<.66){ bg=`hsl(${bh},55%,${7+chE*9}%)`; ink=`hsl(${bh},12%,93%)`; acc=`hsl(${(bh+45)%360},95%,60%)`; }
-    else { bg=`hsl(${bh},80%,${46+chE*12}%)`; ink=`hsl(${bh},20%,6%)`; acc=`hsl(${bh},15%,94%)`; }
-  }
-  if(shot.inv && !T.soft){ const t=bg; bg=ink; ink=t; }
-  ctx2d.fillStyle = bg; ctx2d.fillRect(0,0,W,H);
-
-  /* aura — glowing halo ring behind the focal point, breathing with the bass */
-  if(T.aura){
-    const fy = H*shot.y;
-    const g2 = ctx2d.createRadialGradient(cx,fy,mn*.08, cx,fy,mn*(.6+bE*.12));
-    g2.addColorStop(0,'rgba(0,0,0,0)');
-    g2.addColorStop(.5, withA(acc, (.04+bE*.2)*T.aura));
-    g2.addColorStop(.74, withA(acc, (.12+bE*.3)*T.aura));
-    g2.addColorStop(1,'rgba(0,0,0,0)');
-    ctx2d.fillStyle = g2; ctx2d.fillRect(0,0,W,H);
-  }
-
-  /* camera: per-shot zoom drift + kick pump + hats stutter (theme sets the motion feel) */
-  const shotAge = nowS-lastCutReal;
-  const cam = (1 + shotAge*.035*shot.zDir*(.3+params.energy)*T.motion) * (1 + punch*.16*T.motion*(.3+params.energy*1.4));
-  const jAmp = hE*(3+params.scramble*16);
-  const jx=(Math.random()-.5)*jAmp, jy=(Math.random()-.5)*jAmp;
-  ctx2d.save();
-  ctx2d.translate(cx+jx,cy+jy); ctx2d.scale(cam,cam); ctx2d.rotate(shot.tilt*(1+params.warp)); ctx2d.translate(-cx,-cy);
-
-  const word = (shot.word||'').toUpperCase();
-  const font = px => kinFont(px, shot.useB);
-
-  if(shot.mode==='art' && shotImg()){
-    const dc = duotone(shotImg());
-    const sc = Math.max(W/dc.width, H/dc.height)*(1.12 + shotAge*.04*shot.zDir);
-    ctx2d.drawImage(dc, cx-dc.width*sc/2 + W*shot.xo*.4, cy-dc.height*sc/2, dc.width*sc, dc.height*sc);
-    if(word){
-      const lines = splitBalanced(word);
-      const fpx = Math.min(...lines.map(ln=>fitPx(ln,font,W*.8*szMul)), H*.14*szMul*1.2)*(1+vE*.07);
-      shot._px = fpx;
-      ctx2d.font = font(fpx);
-      ctx2d.textAlign='center'; ctx2d.textBaseline='middle';
-      const lh = fpx*1.15, ly = H*shot.y - (lines.length-1)*lh/2;
-      lines.forEach((ln,i)=>{
-        const tw = ctx2d.measureText(ln).width;
-        if(shot.bar){
-          ctx2d.fillStyle = acc;
-          ctx2d.fillRect(cx-tw/2-mn*.025, ly+i*lh-fpx*.62, tw+mn*.05, fpx*1.24);
-          ctx2d.fillStyle = bg;
-        } else ctx2d.fillStyle = ink;
-        ctx2d.fillText(ln, cx, ly+i*lh);
-      });
+    /* kinetic shot state — DICE resets, every cut regenerates.
+       layoutBias makes each seed structurally different (composition anchor,
+       overall scale, drift), not just a different shot order. */
+    let shot = null, shotIdx = 0, kickCount = 0, lastCutReal = 0, cutFlash = 0, layoutBias = null;
+    let kickSinceCut = 0, nextCutKicks = 4;   // human-jittered cut spacing
+    function reseed(newSeed) {
+      seed = newSeed === undefined ? (Math.random() * 1e9) | 0 : newSeed;
+      rng = mulberry32(seed);
+      layoutBias = {
+        align: ['center', 'center', 'left', 'right'][(rng() * 4) | 0],
+        scale: .68 + rng() * .42,
+        xDrift: (rng() * 2 - 1) * .1,
+      };
+      shot = null; shotIdx = 0;
+      $('#seedTag').textContent = 'seed ' + seed.toString(36);
     }
-  } else if(shot.mode==='icon' && shot.icon){
-    /* one big icon — bass/vox swell it, kick pumps it, arps kick the satellites */
-    ctx2d.save();
-    ctx2d.translate(cx + W*shot.xo*.6, H*shot.y);
-    ctx2d.rotate(tGlobal*shot.spin + Math.sin(tGlobal*.7)*.1);
-    const s = mn*.26*szMul*shot.scale*(1+bE*.3+vE*.12)*(1+punch*.14*(.4+params.energy));
-    if(T.glow){ ctx2d.shadowColor = withA(acc,.9); ctx2d.shadowBlur = Math.min(s*.4, 40); }
-    paintIcon(shot.icon, s, ink, acc, shot.treat);
-    ctx2d.shadowBlur = 0;
-    ctx2d.restore();
-    for(let i=0;i<shot.sats;i++){
-      const a = tGlobal*.9*shot.zDir + i*Math.PI*2/shot.sats;
-      const R = mn*(.34+aE*.08+punch*.03);
-      ctx2d.save();
-      ctx2d.translate(cx+Math.cos(a)*R, H*shot.y+Math.sin(a)*R);
-      ctx2d.rotate(a);
-      paintIcon(shot.icon, mn*.045*szMul*(1+aE*.8), i%2?acc:ink, acc, 0);
-      ctx2d.restore();
+    reseed();
+
+    /* ---------- audio engine ---------- */
+    function ensureCtx() {
+      if (actx) return;
+      actx = new (window.AudioContext || window.webkitAudioContext)();
+      masterGain = actx.createGain();
+      masterGain.connect(actx.destination);
+      recDest = actx.createMediaStreamDestination();
+      masterGain.connect(recDest);
     }
-  } else if(shot.mode==='iconField' && shot.icon){
-    /* icon grid — hot cell pops on the kick, bass slides alternate rows */
-    const cell = mn*.17*szMul;
-    const cols = Math.ceil(W/cell), rows2 = Math.ceil(H/cell);
-    const hot = (kickCount*5+shotIdx)%(cols*rows2);
-    let n = 0;
-    for(let gy=0;gy<rows2;gy++) for(let gx=0;gx<cols;gx++,n++){
-      const x = cell*(gx+.5) + (gy%2?1:-1)*bE*cell*.5;
-      const y = cell*(gy+.5);
-      ctx2d.save();
-      ctx2d.translate(x,y);
-      ctx2d.rotate((gx+gy)%2 ? tGlobal*.5 : -tGlobal*.5);
-      if(n===hot){
-        ctx2d.scale(1+punch*.7, 1+punch*.7);
-        paintIcon(shot.icon, cell*.3, acc, acc, 0);
-      } else {
-        ctx2d.globalAlpha = .25 + chE*.5;
-        paintIcon(shot.icon, cell*.26, ink, acc, shot.treat===1?1:0);
-        ctx2d.globalAlpha = 1;
+    async function loadStem(idx, file, stripEl) {
+      ensureCtx();
+      setStatus('decoding ' + file.name + ' …');
+      const buf = await file.arrayBuffer();
+      let audio;
+      try { audio = await actx.decodeAudioData(buf); }
+      catch (e) { setStatus('could not decode ' + file.name, 'rec'); return; }
+      const wasPlaying = playing; if (playing) stopAll();
+      const s = slots[idx];
+      s.buffer = audio; s.name = file.name;
+      s.gain = actx.createGain();
+      s.analyser = actx.createAnalyser();
+      s.analyser.fftSize = 1024; s.analyser.smoothingTimeConstant = .5;
+      s.timeData = new Float32Array(s.analyser.fftSize);
+      s.freqData = new Uint8Array(s.analyser.frequencyBinCount);
+      s.env = 0; s.prevRms = 0; s.peak = 0; s.onset = false; s.lastOnsetT = 0; s.centroid = .5;
+      s.gain.connect(s.analyser); s.analyser.connect(masterGain);
+      s.gain.gain.value = s.mute ? 0 : 1;
+      duration = Math.max(...slots.map(x => x.buffer ? x.buffer.duration : 0));
+      $('#seek').max = duration;
+      stripEl.classList.add('loaded');
+      stripEl.querySelector('.fname').textContent = file.name;
+      const rd = ROLE_DEFS.find(r => r.key === s.role);
+      setStatus(file.name + ' loaded → ' + (rd ? rd.label : 'SLOT ' + (idx + 1)), 'ok');
+      updateClock();
+      if (wasPlaying) playAll(startOffset);
+    }
+    function playAll(offset) {
+      if (exporting) return;
+      ensureCtx();
+      if (actx.state === 'suspended') actx.resume();
+      const loaded = slots.filter(s => s.buffer);
+      if (!loaded.length) { setStatus('load at least one stem first', 'rec'); return; }
+      offset = clamp(offset || 0, 0, Math.max(0, duration - .05));
+      for (const s of loaded) {
+        s.src = actx.createBufferSource();
+        s.src.buffer = s.buffer;
+        s.src.connect(s.gain);
+        if (offset < s.buffer.duration) s.src.start(0, offset);
       }
-      ctx2d.restore();
+      startCtxTime = actx.currentTime; startOffset = offset;
+      playing = true; $('#playBtn').textContent = '❚❚';
     }
-  } else if(shot.mode==='stack' && word){
-    const fpx = Math.min(fitPx(word,font,W*.92*szMul), H*.3*szMul*1.1)*(1+vE*.05);
-    shot._px = fpx;
-    ctx2d.font = font(fpx);
-    ctx2d.textAlign='center'; ctx2d.textBaseline='middle';
-    const rows = Math.ceil(H/(fpx*.98))+1;
-    const hot = kickCount % rows;
-    for(let i=0;i<rows;i++){
-      const y = (i+.5)*fpx*.98;
-      const off = Math.sin(i*1.7)*W*.03 + (i%2?1:-1)*bE*W*.12*(.4+params.energy);
-      if(i===hot){ ctx2d.fillStyle=acc; ctx2d.fillText(word,cx+off,y); }
-      else if(i%2){ ctx2d.strokeStyle=ink; ctx2d.lineWidth=Math.max(1,fpx*.012); ctx2d.strokeText(word,cx+off,y); }
-      else { ctx2d.fillStyle=ink; ctx2d.fillText(word,cx+off,y); }
+    function stopAll() {
+      for (const s of slots) {
+        if (s.src) { try { s.src.stop(); } catch (e) { } s.src.disconnect(); s.src = null; }
+      }
+      playing = false; $('#playBtn').textContent = '►';
     }
-  } else if(shot.mode==='wall' && word){
-    const fpx = mn*.075*szMul*(1+vE*.1);
-    shot._px = fpx;
-    ctx2d.font = font(fpx);
-    ctx2d.textAlign='center'; ctx2d.textBaseline='middle';
-    const tw = ctx2d.measureText(word).width;
-    const gw = Math.max(1, Math.ceil(W/(tw+mn*.05))), ch = fpx*1.5;
-    const gh = Math.ceil(H/ch), cw = W/gw;
-    const hotI = (kickCount*7+shotIdx) % (gw*gh);
-    let n = 0;
-    for(let gy=0; gy<=gh; gy++) for(let gx=0; gx<gw; gx++, n++){
-      const x = cw*(gx+.5) + (gy%2?1:-1)*bE*cw*.4, y = ch*(gy+.5);
-      if(n===hotI){
-        ctx2d.save(); ctx2d.translate(x,y); ctx2d.scale(1+punch*.5,1+punch*.5);
-        ctx2d.fillStyle=acc; ctx2d.fillText(word,0,0); ctx2d.restore();
-      } else {
-        ctx2d.globalAlpha = .2 + chE*.55;
-        ctx2d.fillStyle=ink; ctx2d.fillText(word,x,y);
-        ctx2d.globalAlpha = 1;
+    function playhead() {
+      if (renderClock !== null) return renderClock;
+      return playing ? startOffset + (actx.currentTime - startCtxTime) : startOffset;
+    }
+    function seekTo(t) {
+      const was = playing; stopAll();
+      startOffset = clamp(t, 0, duration);
+      if (was) playAll(startOffset);
+    }
+
+    /* ---------- feature extraction ---------- */
+    function analyse(dt) {
+      const now = performance.now() / 1000;
+      for (const s of slots) {
+        if (!s.buffer || !s.analyser) { continue; }
+        s.analyser.getFloatTimeDomainData(s.timeData);
+        let sum = 0;
+        for (let i = 0; i < s.timeData.length; i += 2) sum += s.timeData[i] * s.timeData[i];
+        const rms = Math.sqrt(sum / (s.timeData.length / 2));
+        // running peak (halves every ~2.5s) normalises per-stem loudness → 0..1
+        s.peak = Math.max(s.peak * Math.pow(.5, dt / 2.5), rms);
+        const nrm = s.peak > .006 ? clamp(rms / s.peak, 0, 1) : 0;
+        // envelope: instant attack, smooth release
+        s.env = nrm > s.env ? nrm : lerp(s.env, nrm, 1 - Math.pow(.001, dt * 3));
+        // onset: relative jump vs recent level + refractory window
+        s.onset = false;
+        const jump = nrm - s.prevRms;
+        if (jump > 0.2 && nrm > 0.3 && (now - s.lastOnsetT) > 0.085) {
+          s.onset = true; s.lastOnsetT = now;
+        }
+        s.prevRms = lerp(s.prevRms, nrm, .55);
+        // spectral centroid (brightness / rough pitch height)
+        s.analyser.getByteFrequencyData(s.freqData);
+        let num = 0, den = 0;
+        const N = s.freqData.length;
+        for (let i = 2; i < N; i++) { num += i * s.freqData[i]; den += s.freqData[i]; }
+        if (den > 40) s.centroid = lerp(s.centroid, clamp((num / den) / (N * .45), 0, 1), .3);
       }
     }
-  } else if(word){ /* type — the huge word / lyric line; align + scale vary per shot */
-    const lines = splitBalanced(word);
-    const vert = shot.vert && lines.length===1;
-    let fpx = Math.min(H*.42*szMul/lines.length, ...lines.map(ln=>fitPx(ln,font, (vert?H*.85:W*.94)*szMul)));
-    fpx *= shot.scale * (1 + vE*.08 + punch*.06*params.energy);
-    shot._px = fpx;
-    ctx2d.save();
-    ctx2d.translate(cx + (shot.align==='center'&&!vert ? W*shot.xo*.5 : 0), vert ? cy : H*shot.y);
-    if(vert) ctx2d.rotate(-Math.PI/2);
-    ctx2d.font = font(fpx);
-    ctx2d.textAlign='left'; ctx2d.textBaseline='middle';
-    const lh = fpx*1.04, y0 = -(lines.length-1)*lh/2;
-    const zone = W*.86;
-    const jA = aE*fpx*.12;   // arps ripple the letters, always on
-    let frameX = 1e9, frameW = 0;
-    for(let l=0;l<lines.length;l++){
-      const ln = lines[l];
-      const lw = ctx2d.measureText(ln).width;
-      let x = vert||shot.align==='center' ? -lw/2 : shot.align==='left' ? -zone/2 : zone/2-lw;
-      frameX = Math.min(frameX, x); frameW = Math.max(frameW, lw);
-      if(T.glow){   // soft accent bloom behind the line
-        ctx2d.shadowColor = withA(acc,.85); ctx2d.shadowBlur = Math.min(fpx*.3, 36);
-        ctx2d.fillStyle = ink;
-        ctx2d.fillText(ln, x, y0 + l*lh);
+    /* role queries aggregate every slot assigned that role; MIX slots feed several */
+    function env(role) {
+      let m = 0;
+      for (const s of slots) {
+        if (!s.buffer || s.mute) continue;
+        if (s.role === role || (s.role === 'mix' && MIX_ROLES[role])) m = Math.max(m, s.env);
+      }
+      return m;
+    }
+    function hit(role) {
+      for (const s of slots) {
+        if (!s.buffer || s.mute) continue;
+        if ((s.role === role || (s.role === 'mix' && role === 'kick')) && s.onset) return true;
+      }
+      return false;
+    }
+
+    /* ---------- director: song-energy phrasing ----------
+       tracks overall energy → chill / build / drop sections, so the edit
+       breathes like a human cut it: breakdowns hold shots, builds push in
+       with rising tension, drops SLAM. works live and in offline export. */
+    let songE = 0, songESlow = 0, section = 'chill', buildAmt = 0, dropFlash = 0, lastDropT = -1e9;
+    function direct(dt) {
+      const eNow = clamp((env('kick') * .5 + env('bass') * .4 + env('chords') * .25 + env('vox') * .2 + env('fx') * .2) / 1.2, 0, 1);
+      songE = lerp(songE, eNow, 1 - Math.pow(.001, dt * 1.6));
+      songESlow = lerp(songESlow, songE, 1 - Math.pow(.001, dt * .3));
+      const rising = songE - songESlow;
+      if (section !== 'drop') {
+        if (songE > .58 && rising > .05 && clockNow() - lastDropT > 4) dropHit();
+        else section = songE < .34 ? 'chill' : 'build';
+      } else if (songE < .42) {
+        section = songE < .3 ? 'chill' : 'build';
+      }
+      buildAmt = section === 'build'
+        ? clamp(buildAmt + dt * (rising > .015 ? .28 : -.35), 0, 1)
+        : Math.max(0, buildAmt - dt * 1.4);
+      dropFlash = Math.max(0, dropFlash - dt * 2.4);
+    }
+    function dropHit() {
+      section = 'drop'; dropFlash = 1; punch = 1; lastDropT = clockNow();
+      for (let i = 0; i < 50; i++) sparks.push({ x: Math.random() * cv.width, y: Math.random() * cv.height, life: 1, size: 1 + Math.random() * 3 });
+      newShot();
+    }
+
+    /* ---------- renderer ---------- */
+    const cv = $('#viz'), ctx2d = cv.getContext('2d', { alpha: false });
+    let sparks = [], voxRings = [], punch = 0, glitch = 0, clapFlash = 0, tGlobal = 0, lastFrame = performance.now();
+    let dotPat = null, grainPat = null;   // cached canvas patterns
+    let imgA = null, imgB = null;
+    const GLYPHS = '#%&@$0X§?!';
+
+    /* grain texture */
+    const grainCv = document.createElement('canvas'); grainCv.width = grainCv.height = 140;
+    (function () {
+      const g = grainCv.getContext('2d'), id = g.createImageData(140, 140);
+      for (let i = 0; i < id.data.length; i += 4) { const v = 118 + Math.random() * 70 | 0; id.data[i] = id.data[i + 1] = id.data[i + 2] = v; id.data[i + 3] = 255; }
+      g.putImageData(id, 0, 0);
+    })();
+
+    /* halftone dot-screen tile (print theme) */
+    const dotCv = document.createElement('canvas'); dotCv.width = dotCv.height = 96;
+    (function () {
+      const g = dotCv.getContext('2d');
+      g.fillStyle = '#808080'; g.fillRect(0, 0, 96, 96);
+      g.fillStyle = '#2c2c2c';
+      for (let y = 0; y <= 96; y += 6) for (let x = 0; x <= 96; x += 6) {
+        g.beginPath(); g.arc(x + ((y / 6) % 2 ? 3 : 0), y, 1.5, 0, Math.PI * 2); g.fill();
+      }
+    })();
+
+    function baseHue() { return params.hue * 360; }
+    const withA = (c, a) => c.replace('hsl(', 'hsla(').replace(')', `,${a})`);
+
+    /* ---------- themes: named aesthetics ----------
+       a theme bundles palette recipe, image treatment, type voice, post texture,
+       motion feel, and shot-mode weights. DICE + knobs vary WITHIN a theme, so
+       re-running the same song under a different theme gives a different video.
+       add new aesthetics here — this is the main growth surface. */
+    const THEMES = {
+      mono: {
+        label: 'MONO',       // bold b&w kinetic — the original
+        weights: { icon: 2, iconField: 1, type: 2, stack: 2, wall: 1, art: 2 },
+        serif: 0, italic: 0, glow: 0, aura: 0, halftone: 0, strobe: 1, soft: 0, motion: 1,
+        duo: { hueOff: 0, loS: 45, loL: 8, hiS: 30, hiL: 82 },
+      },
+      occult: {
+        label: 'OCCULT',   // near-black, glowing halo ring, serif, icon-heavy
+        weights: { icon: 4, iconField: 1, type: 2, stack: 1, wall: 0, art: 2 },
+        serif: 1, italic: 0, glow: 1, aura: 1, halftone: 0, strobe: 0, soft: 1, motion: .8,
+        duo: { hueOff: 8, loS: 60, loL: 6, hiS: 75, hiL: 60 },
+      },
+      print: {
+        label: 'PRINT',     // saturated colour fields + halftone dot screen
+        weights: { icon: 2, iconField: 2, type: 2, stack: 1, wall: 2, art: 4 },
+        serif: 0, italic: 0, glow: 0, aura: 0, halftone: 1, strobe: 1, soft: 0, motion: 1,
+        duo: { hueOff: -6, loS: 75, loL: 14, hiS: 20, hiL: 88 },
+      },
+    };
+    let themeKey = 'mono';
+
+    /* fonts (user .ttf/.otf files) + duotone image cache */
+    let fontAFam = null, fontBFam = null, fontN = 0;
+    function kinFont(px, useB) {
+      const fam = useB ? (fontBFam || fontAFam) : (fontAFam || fontBFam);
+      const T = THEMES[themeKey];
+      const fb = T.serif ? '"Didot","Bodoni 72",Georgia,serif' : '"Arial Black","Helvetica Neue",Helvetica,Impact,sans-serif';
+      return `${T.italic ? 'italic ' : ''}${T.serif ? 800 : 900} ${px}px ${fam ? `"${fam}",` : ''}${fb}`;
+    }
+    function fitPx(txt, fontFn, target) {
+      ctx2d.font = fontFn(100);
+      return clamp(100 * target / Math.max(ctx2d.measureText(txt).width, 1), 10, 900);
+    }
+    function splitBalanced(txt) {
+      if (txt.length <= 13 || !txt.includes(' ')) return [txt];
+      const mid = txt.length / 2;
+      let best = -1, bd = 1e9;
+      for (let i = 0; i < txt.length; i++) if (txt[i] === ' ') { const d = Math.abs(i - mid); if (d < bd) { bd = d; best = i; } }
+      return [txt.slice(0, best), txt.slice(best + 1)];
+    }
+    /* ---------- filler pool: vector icon painters ----------
+       what plays between lyric lines. each entry is a self-contained painter —
+       this is the plug-point for richer filler scenes later (animated sequences,
+       image collages, …): add a painter + a shot mode that uses it. */
+    const ICON_LIST = ['star', 'sparkle', 'burst', 'cross', 'ring', 'target', 'diamond', 'bolt', 'heart', 'flower', 'arrow', 'spiral'];
+    const STROKE_ICONS = { burst: 1, ring: 1, target: 1, spiral: 1 };
+    let iconPool = new Set(['star', 'sparkle', 'burst', 'cross', 'ring', 'flower']);
+    function iconPath(id, s) {
+      ctx2d.beginPath();
+      if (id === 'star') { for (let i = 0; i < 10; i++) { const a = i * Math.PI / 5 - Math.PI / 2, rr = i % 2 ? s * .45 : s; i ? ctx2d.lineTo(Math.cos(a) * rr, Math.sin(a) * rr) : ctx2d.moveTo(Math.cos(a) * rr, Math.sin(a) * rr); } ctx2d.closePath(); }
+      else if (id === 'sparkle') { for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4 - Math.PI / 2, rr = i % 2 ? s * .22 : s; i ? ctx2d.lineTo(Math.cos(a) * rr, Math.sin(a) * rr) : ctx2d.moveTo(Math.cos(a) * rr, Math.sin(a) * rr); } ctx2d.closePath(); }
+      else if (id === 'burst') { for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; ctx2d.moveTo(Math.cos(a) * s * .25, Math.sin(a) * s * .25); ctx2d.lineTo(Math.cos(a) * s, Math.sin(a) * s); } }
+      else if (id === 'cross') { ctx2d.rect(-s * .26, -s, s * .52, s * 2); ctx2d.rect(-s, -s * .26, s * 2, s * .52); }
+      else if (id === 'ring') { ctx2d.arc(0, 0, s * .8, 0, Math.PI * 2); }
+      else if (id === 'target') { ctx2d.arc(0, 0, s * .85, 0, Math.PI * 2); ctx2d.moveTo(s * .45, 0); ctx2d.arc(0, 0, s * .45, 0, Math.PI * 2); ctx2d.moveTo(s * .1, 0); ctx2d.arc(0, 0, s * .1, 0, Math.PI * 2); }
+      else if (id === 'diamond') { ctx2d.moveTo(0, -s); ctx2d.lineTo(s * .68, 0); ctx2d.lineTo(0, s); ctx2d.lineTo(-s * .68, 0); ctx2d.closePath(); }
+      else if (id === 'bolt') { ctx2d.moveTo(s * .25, -s); ctx2d.lineTo(-s * .4, s * .12); ctx2d.lineTo(-s * .02, s * .12); ctx2d.lineTo(-s * .25, s); ctx2d.lineTo(s * .4, -s * .12); ctx2d.lineTo(s * .02, -s * .12); ctx2d.closePath(); }
+      else if (id === 'heart') { ctx2d.moveTo(0, s * .55); ctx2d.bezierCurveTo(-s * 1.1, -s * .15, -s * .55, -s * .95, 0, -s * .35); ctx2d.bezierCurveTo(s * .55, -s * .95, s * 1.1, -s * .15, 0, s * .55); }
+      else if (id === 'flower') {
+        for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3, px = Math.cos(a) * s * .55, py = Math.sin(a) * s * .55; ctx2d.moveTo(px + s * .34, py); ctx2d.arc(px, py, s * .34, 0, Math.PI * 2); }
+        ctx2d.moveTo(s * .16, 0); ctx2d.arc(0, 0, s * .16, 0, Math.PI * 2);
+      }
+      else if (id === 'arrow') { ctx2d.moveTo(0, -s); ctx2d.lineTo(s * .6, -s * .25); ctx2d.lineTo(s * .22, -s * .25); ctx2d.lineTo(s * .22, s); ctx2d.lineTo(-s * .22, s); ctx2d.lineTo(-s * .22, -s * .25); ctx2d.lineTo(-s * .6, -s * .25); ctx2d.closePath(); }
+      else if (id === 'spiral') { for (let t = 0; t <= Math.PI * 5; t += .2) { const rr = s * t / (Math.PI * 5); t ? ctx2d.lineTo(Math.cos(t) * rr, Math.sin(t) * rr) : ctx2d.moveTo(0, 0); } }
+    }
+    function paintIcon(id, s, col, accCol, treat) {
+      const strokeOnly = STROKE_ICONS[id] || treat === 1;
+      ctx2d.lineWidth = Math.max(2, s * .09);
+      if (treat === 2 && !strokeOnly) {
+        ctx2d.save(); ctx2d.translate(s * .08, s * .08);
+        iconPath(id, s); ctx2d.fillStyle = accCol; ctx2d.fill();
+        ctx2d.restore();
+      }
+      iconPath(id, s);
+      if (strokeOnly) { ctx2d.strokeStyle = col; ctx2d.stroke(); }
+      else { ctx2d.fillStyle = col; ctx2d.fill(); }
+    }
+
+    function hsl2rgb(h, s, l) {
+      s /= 100; l /= 100;
+      const k = n => (n + h / 30) % 12;
+      const a = s * Math.min(l, 1 - l);
+      const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1));
+      return [f(0) * 255, f(8) * 255, f(4) * 255];
+    }
+    const duoCache = new WeakMap();
+    function duotone(img) {
+      // remap image luminance onto the theme's shadow→highlight pair (hue knob rotates it)
+      const key = themeKey + '|' + Math.round(params.hue * 24) + '|' + Math.round(params.style * 10);
+      const c = duoCache.get(img);
+      if (c && (c.key === key || performance.now() - c.at < 250)) return c.cv;
+      const D = THEMES[themeKey].duo;
+      const dh = (baseHue() + D.hueOff + 360) % 360;
+      const lo = hsl2rgb(dh, D.loS, D.loL), hi = hsl2rgb(dh, D.hiS + params.style * 15, D.hiL);
+      const w = Math.min(img.width, 1080), h = Math.round(img.height * w / img.width);
+      const oc = document.createElement('canvas'); oc.width = w; oc.height = h;
+      const g = oc.getContext('2d');
+      g.drawImage(img, 0, 0, w, h);
+      const id = g.getImageData(0, 0, w, h), d = id.data;
+      for (let i = 0; i < d.length; i += 4) {
+        const t = (d[i] * .299 + d[i + 1] * .587 + d[i + 2] * .114) / 255;
+        d[i] = lo[0] + (hi[0] - lo[0]) * t; d[i + 1] = lo[1] + (hi[1] - lo[1]) * t; d[i + 2] = lo[2] + (hi[2] - lo[2]) * t;
+      }
+      g.putImageData(id, 0, 0);
+      duoCache.set(img, { key, cv: oc, at: performance.now() });
+      return oc;
+    }
+
+    /* ---------- lyrics: paste lines → tap-sync timestamps → lines drive cuts ---------- */
+    let lyricLines = [], lyricTimes = [], lyricIdx = -1, tapping = false, tapIdx = 0;
+    function syncLyricLines() {
+      lyricLines = $('#lyricsInput').value.split('\n').map(s => s.trim()).filter(Boolean);
+      lyricTimes.length = lyricLines.length;
+    }
+    function currentLyric() {
+      const ph = playhead();
+      let idx = -1;
+      for (let i = 0; i < lyricLines.length; i++) {
+        const t = lyricTimes[i];
+        if (t == null) continue;
+        if (t <= ph) idx = i; else break;
+      }
+      if (idx >= 0) { // a line holds until the next timed line or 8s, whichever first
+        let next = null;
+        for (let j = idx + 1; j < lyricLines.length; j++) { if (lyricTimes[j] != null) { next = lyricTimes[j]; break; } }
+        const end = Math.min(next == null ? lyricTimes[idx] + 8 : next, lyricTimes[idx] + 8);
+        if (ph > end) idx = -1;
+      }
+      return idx;
+    }
+    function parseLRC(txt) {
+      const ls = [], ts = [];
+      for (const raw of txt.split('\n')) {
+        const m = raw.match(/\[(\d+):(\d+(?:\.\d+)?)\](.*)/);
+        if (!m) continue;
+        const line = m[3].trim();
+        if (line) { ls.push(line); ts.push((+m[1]) * 60 + parseFloat(m[2])); }
+      }
+      return { ls, ts };
+    }
+    function saveLocal() {
+      try {
+        localStorage.setItem('stemvis', JSON.stringify({
+          words: $('#wordsInput').value, lyr: $('#lyricsInput').value, times: lyricTimes, icons: [...iconPool], theme: themeKey, roles: slots.map(s => s.role),
+          hook: { t: $('#hookInput').value, s: hookStyle, l: hookLen }
+        }));
+      } catch (e) { }
+    }
+    function loadLocal() {
+      try {
+        const d = JSON.parse(localStorage.getItem('stemvis') || '{}');
+        if (d.words) $('#wordsInput').value = d.words;
+        if (d.lyr) $('#lyricsInput').value = d.lyr;
+        syncLyricLines();
+        if (Array.isArray(d.times)) for (let i = 0; i < lyricLines.length; i++) lyricTimes[i] = d.times[i] ?? null;
+        if (Array.isArray(d.icons)) iconPool = new Set(d.icons.filter(i => ICON_LIST.includes(i)));
+        if (d.theme && THEMES[d.theme]) themeKey = d.theme;
+        if (Array.isArray(d.roles)) d.roles.forEach((r, i) => {
+          if (slots[i] && ROLE_DEFS.some(x => x.key === r)) slots[i].role = r;
+        });
+        if (d.hook) {
+          if (typeof d.hook.t === 'string') $('#hookInput').value = d.hook.t;
+          if (HOOK_STYLE_DEFS.some(x => x[0] === d.hook.s)) hookStyle = d.hook.s;
+          if ([2, 3, 5].includes(d.hook.l)) {
+            hookLen = d.hook.l;
+            document.querySelectorAll('.hookLenBtn').forEach(b => b.classList.toggle('active', +b.dataset.hl === hookLen));
+          }
+        }
+      } catch (e) { }
+    }
+
+    /* ---------- KINETIC renderer — cut-based shots ----------
+       the composition hard-cuts to a new seeded shot every N kicks (CUTS),
+       on every timed lyric line, and whenever the FX stem hits.
+       modes: type (huge word) · stack (word rows) · art (full-bleed duotone) · wall (word grid) */
+    function kinWords() {
+      const raw = $('#wordsInput').value.trim();
+      return raw ? raw.split(/[\n,]/).map(s => s.trim()).filter(Boolean) : [];
+    }
+    function newShot() {
+      shotIdx++;
+      const r = mulberry32((seed ^ (shotIdx * 0x9E3779B9)) | 0);
+      const words = kinWords();
+      const icons = [...iconPool];
+      const lyricOn = lyricIdx >= 0 && lyricLines[lyricIdx];
+      let mode, word = '';
+      if (lyricOn) {
+        mode = r() < .72 ? 'type' : 'art';
+        word = lyricLines[lyricIdx];
+      } else {
+        /* filler: icons + WORDS + images, weighted by the theme — never stray lyric lines */
+        const wts = THEMES[themeKey].weights;
+        const cands = [];
+        const push = (m, w) => { for (let i = 0; i < w; i++) cands.push(m); };
+        if (icons.length) { push('icon', wts.icon); push('iconField', wts.iconField); }
+        if (words.length) { push('type', wts.type); push('stack', wts.stack); push('wall', wts.wall); }
+        if (imgA || imgB) push('art', wts.art);
+        /* director bias: drops want big bold shots, breakdowns want imagery */
+        if (section === 'drop') { if (words.length) { push('type', 2); push('stack', 1); } if (icons.length) push('icon', 2); }
+        else if (section === 'chill' && (imgA || imgB)) push('art', 2);
+        if (!cands.length) cands.push('type');
+        mode = cands[(r() * cands.length) | 0];
+        if (words.length) word = words[(r() * words.length) | 0];
+      }
+      shot = {
+        mode, word,
+        icon: icons.length ? icons[(r() * icons.length) | 0] : null,
+        inv: r() < .35,
+        vert: !lyricOn && r() < .18,
+        tilt: (r() * 2 - 1) * .06,
+        y: .3 + r() * .4,
+        zDir: r() < .55 ? 1 : -1,
+        spin: (r() * 2 - 1) * .7,
+        sats: r() < .45 ? 4 + (r() * 4 | 0) : 0,
+        bands: r() < .25 ? 2 + (r() * 3 | 0) : 0,
+        bar: r() < .5,
+        treat: (r() * 3) | 0,            // 0 fill · 1 outline · 2 offset-shadow
+        align: r() < .55 ? layoutBias.align : ['center', 'left', 'right'][(r() * 3) | 0],
+        scale: clamp(layoutBias.scale * (.8 + r() * .45), .5, 1.15),
+        frame: r() < .18,
+        xo: layoutBias.xDrift + (r() * 2 - 1) * .08,
+        useB: !!fontBFam && r() < .5,
+        imgPick: r() < .5,
+        _px: 0,
+      };
+      if (shot.mode === 'art' && !imgA && !imgB) shot.mode = shot.icon ? 'icon' : 'type';
+      if (/type|stack|wall/.test(shot.mode) && !shot.word) shot.word = 'STEMVIS';
+      if (section === 'drop') { shot.scale = clamp(shot.scale * 1.18, .5, 1.2); shot.vert = false; }
+      else if (section === 'chill') { shot.scale = clamp(shot.scale * .82, .45, 1.15); }
+      cutFlash = 1; lastCutReal = clockNow(); kickSinceCut = 0;
+    }
+    function shotImg() { return shot.imgPick ? (imgA || imgB) : (imgB || imgA); }
+
+    function drawKinetic(dt) {
+      const W = cv.width, H = cv.height, cx = W / 2, cy = H / 2, mn = Math.min(W, H);
+      const bh = baseHue();
+      const T = THEMES[themeKey];
+      const szMul = .5 + params.size * .9;   // SIZE knob: .5× … 1.4× type/icon scale
+      const bE = env('bass'), vE = env('vox'), aE = env('arps'), hE = env('hats'), chE = env('chords');
+
+      /* lyric lines force cuts with their text */
+      const li = (playing || renderClock !== null) ? currentLyric() : -1;
+      if (li !== lyricIdx) { lyricIdx = li; if (li >= 0) newShot(); }
+
+      /* cuts: kick-driven with human jitter; the director phrases the rate —
+         breakdowns hold shots, builds tighten, drops cut at full speed */
+      const nowS = clockNow();
+      const baseCut = params.cuts > .75 ? 1 : params.cuts > .5 ? 2 : params.cuts > .25 ? 4 : 8;
+      const secCut = section === 'chill' ? 3 : section === 'build' ? 1.5 : 1;
+      if (hit('kick')) {
+        kickCount++; kickSinceCut++;
+        if (kickSinceCut >= nextCutKicks) {
+          newShot();
+          nextCutKicks = Math.max(1, Math.round(baseCut * secCut * (Math.random() < .3 ? (Math.random() < .5 ? .6 : 1.6) : 1)));
+        }
+      }
+      if (hit('fx')) newShot();
+      if (!shot || nowS - lastCutReal > (9 - 7 * params.cuts) * (section === 'chill' ? 1.7 : 1)) newShot();
+      cutFlash = Math.max(0, cutFlash - dt * 10);
+      if (hit('vox') && voxRings.length < 6) voxRings.push({ age: 0 });
+
+      /* palette — theme recipe, STYLE morphs it, CHORDS breathe it */
+      const st = params.style;
+      let bg, ink, acc;
+      if (themeKey === 'occult') {
+        bg = `hsl(${bh},${30 + st * 40}%,${3 + chE * 5}%)`;
+        ink = `hsl(${bh},${55 + st * 30}%,${62 + chE * 8}%)`;
+        acc = `hsl(${(bh + 18) % 360},95%,60%)`;
+      } else if (themeKey === 'print') {
+        bg = `hsl(${bh},${45 + st * 40}%,${18 + st * 22 + chE * 8}%)`;
+        ink = `hsl(${bh},18%,94%)`;
+        acc = `hsl(${(bh + 150) % 360},90%,${60 + st * 15}%)`;
+      } else { /* mono: STYLE walks b&w → tinted dark → full colour field */
+        if (st < .33) { bg = `hsl(${bh},${(chE * 25) | 0}%,${4 + chE * 7}%)`; ink = `hsl(${bh},6%,93%)`; acc = `hsl(${bh},90%,58%)`; }
+        else if (st < .66) { bg = `hsl(${bh},55%,${7 + chE * 9}%)`; ink = `hsl(${bh},12%,93%)`; acc = `hsl(${(bh + 45) % 360},95%,60%)`; }
+        else { bg = `hsl(${bh},80%,${46 + chE * 12}%)`; ink = `hsl(${bh},20%,6%)`; acc = `hsl(${bh},15%,94%)`; }
+      }
+      if (shot.inv && !T.soft) { const t = bg; bg = ink; ink = t; }
+      lastPal = { bg, ink, acc };
+      ctx2d.fillStyle = bg; ctx2d.fillRect(0, 0, W, H);
+
+      /* aura — glowing halo ring behind the focal point, breathing with the bass */
+      if (T.aura) {
+        const fy = H * shot.y;
+        const g2 = ctx2d.createRadialGradient(cx, fy, mn * .08, cx, fy, mn * (.6 + bE * .12));
+        g2.addColorStop(0, 'rgba(0,0,0,0)');
+        g2.addColorStop(.5, withA(acc, (.04 + bE * .2) * T.aura));
+        g2.addColorStop(.74, withA(acc, (.12 + bE * .3) * T.aura));
+        g2.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx2d.fillStyle = g2; ctx2d.fillRect(0, 0, W, H);
+      }
+
+      /* camera: shot zoom drift + kick pump + BASS BOUNCE + build push-in,
+         over constant handheld micro-drift so nothing ever sits perfectly still */
+      const shotAge = nowS - lastCutReal;
+      const secMotion = section === 'drop' ? 1.3 : section === 'chill' ? .65 : 1;
+      const cam = (1 + shotAge * .035 * shot.zDir * (.3 + params.energy) * T.motion)
+        * (1 + punch * .16 * T.motion * secMotion * (.3 + params.energy * 1.4))
+        * (1 + bE * .05 * T.motion * secMotion)
+        * (1 + buildAmt * .16)
+        * (1 + dropFlash * .12);
+      const jAmp = hE * (3 + params.scramble * 16) + buildAmt * 5;
+      const hhx = (Math.sin(tGlobal * .37) * 2.6 + Math.sin(tGlobal * 1.31) * 1.2) * T.motion;
+      const hhy = (Math.cos(tGlobal * .29) * 2.2 + Math.sin(tGlobal * 1.13) * 1.1) * T.motion;
+      const jx = (Math.random() - .5) * jAmp + hhx, jy = (Math.random() - .5) * jAmp + hhy;
+      ctx2d.save();
+      ctx2d.translate(cx + jx, cy + jy); ctx2d.scale(cam, cam);
+      ctx2d.rotate(shot.tilt * (1 + params.warp) + Math.sin(tGlobal * .21) * .004);
+      ctx2d.translate(-cx, -cy);
+
+      const word = (shot.word || '').toUpperCase();
+      const font = px => kinFont(px, shot.useB);
+
+      if (shot.mode === 'art' && shotImg()) {
+        const dc = duotone(shotImg());
+        const sc = Math.max(W / dc.width, H / dc.height) * (1.12 + shotAge * .04 * shot.zDir);
+        ctx2d.drawImage(dc, cx - dc.width * sc / 2 + W * shot.xo * .4, cy - dc.height * sc / 2, dc.width * sc, dc.height * sc);
+        if (word) {
+          const lines = splitBalanced(word);
+          const fpx = Math.min(...lines.map(ln => fitPx(ln, font, W * .8 * szMul)), H * .14 * szMul * 1.2) * (1 + vE * .07);
+          shot._px = fpx;
+          ctx2d.font = font(fpx);
+          ctx2d.textAlign = 'center'; ctx2d.textBaseline = 'middle';
+          const lh = fpx * 1.15, ly = H * shot.y - (lines.length - 1) * lh / 2;
+          lines.forEach((ln, i) => {
+            const tw = ctx2d.measureText(ln).width;
+            if (shot.bar) {
+              ctx2d.fillStyle = acc;
+              ctx2d.fillRect(cx - tw / 2 - mn * .025, ly + i * lh - fpx * .62, tw + mn * .05, fpx * 1.24);
+              ctx2d.fillStyle = bg;
+            } else ctx2d.fillStyle = ink;
+            ctx2d.fillText(ln, cx, ly + i * lh);
+          });
+        }
+      } else if (shot.mode === 'icon' && shot.icon) {
+        /* one big icon — bass/vox swell it, kick pumps it, arps kick the satellites */
+        ctx2d.save();
+        ctx2d.translate(cx + W * shot.xo * .6, H * shot.y);
+        ctx2d.rotate(tGlobal * shot.spin + Math.sin(tGlobal * .7) * .1);
+        const s = mn * .26 * szMul * shot.scale * (1 + bE * .3 + vE * .12) * (1 + punch * .14 * (.4 + params.energy));
+        if (T.glow) { ctx2d.shadowColor = withA(acc, .9); ctx2d.shadowBlur = Math.min(s * .4, 40); }
+        paintIcon(shot.icon, s, ink, acc, shot.treat);
         ctx2d.shadowBlur = 0;
+        ctx2d.restore();
+        for (let i = 0; i < shot.sats; i++) {
+          const a = tGlobal * .9 * shot.zDir + i * Math.PI * 2 / shot.sats;
+          const R = mn * (.34 + aE * .08 + punch * .03);
+          ctx2d.save();
+          ctx2d.translate(cx + Math.cos(a) * R, H * shot.y + Math.sin(a) * R);
+          ctx2d.rotate(a);
+          paintIcon(shot.icon, mn * .045 * szMul * (1 + aE * .8), i % 2 ? acc : ink, acc, 0);
+          ctx2d.restore();
+        }
+      } else if (shot.mode === 'iconField' && shot.icon) {
+        /* icon grid — hot cell pops on the kick, bass slides alternate rows */
+        const cell = mn * .17 * szMul;
+        const cols = Math.ceil(W / cell), rows2 = Math.ceil(H / cell);
+        const hot = (kickCount * 5 + shotIdx) % (cols * rows2);
+        let n = 0;
+        for (let gy = 0; gy < rows2; gy++) for (let gx = 0; gx < cols; gx++, n++) {
+          const x = cell * (gx + .5) + (gy % 2 ? 1 : -1) * bE * cell * .5;
+          const y = cell * (gy + .5);
+          ctx2d.save();
+          ctx2d.translate(x, y);
+          ctx2d.rotate((gx + gy) % 2 ? tGlobal * .5 : -tGlobal * .5);
+          if (n === hot) {
+            ctx2d.scale(1 + punch * .7, 1 + punch * .7);
+            paintIcon(shot.icon, cell * .3, acc, acc, 0);
+          } else {
+            ctx2d.globalAlpha = .25 + chE * .5;
+            paintIcon(shot.icon, cell * .26, ink, acc, shot.treat === 1 ? 1 : 0);
+            ctx2d.globalAlpha = 1;
+          }
+          ctx2d.restore();
+        }
+      } else if (shot.mode === 'stack' && word) {
+        const fpx = Math.min(fitPx(word, font, W * .92 * szMul), H * .3 * szMul * 1.1) * (1 + vE * .05);
+        shot._px = fpx;
+        ctx2d.font = font(fpx);
+        ctx2d.textAlign = 'center'; ctx2d.textBaseline = 'middle';
+        const rows = Math.ceil(H / (fpx * .98)) + 1;
+        const hot = kickCount % rows;
+        for (let i = 0; i < rows; i++) {
+          const y = (i + .5) * fpx * .98;
+          const off = Math.sin(i * 1.7) * W * .03 + (i % 2 ? 1 : -1) * bE * W * .12 * (.4 + params.energy);
+          if (i === hot) { ctx2d.fillStyle = acc; ctx2d.fillText(word, cx + off, y); }
+          else if (i % 2) { ctx2d.strokeStyle = ink; ctx2d.lineWidth = Math.max(1, fpx * .012); ctx2d.strokeText(word, cx + off, y); }
+          else { ctx2d.fillStyle = ink; ctx2d.fillText(word, cx + off, y); }
+        }
+      } else if (shot.mode === 'wall' && word) {
+        const fpx = mn * .075 * szMul * (1 + vE * .1);
+        shot._px = fpx;
+        ctx2d.font = font(fpx);
+        ctx2d.textAlign = 'center'; ctx2d.textBaseline = 'middle';
+        const tw = ctx2d.measureText(word).width;
+        const gw = Math.max(1, Math.ceil(W / (tw + mn * .05))), ch = fpx * 1.5;
+        const gh = Math.ceil(H / ch), cw = W / gw;
+        const hotI = (kickCount * 7 + shotIdx) % (gw * gh);
+        let n = 0;
+        for (let gy = 0; gy <= gh; gy++) for (let gx = 0; gx < gw; gx++, n++) {
+          const x = cw * (gx + .5) + (gy % 2 ? 1 : -1) * bE * cw * .4, y = ch * (gy + .5);
+          if (n === hotI) {
+            ctx2d.save(); ctx2d.translate(x, y); ctx2d.scale(1 + punch * .5, 1 + punch * .5);
+            ctx2d.fillStyle = acc; ctx2d.fillText(word, 0, 0); ctx2d.restore();
+          } else {
+            ctx2d.globalAlpha = .2 + chE * .55;
+            ctx2d.fillStyle = ink; ctx2d.fillText(word, x, y);
+            ctx2d.globalAlpha = 1;
+          }
+        }
+      } else if (word) { /* type — the huge word / lyric line; align + scale vary per shot */
+        const lines = splitBalanced(word);
+        const vert = shot.vert && lines.length === 1;
+        let fpx = Math.min(H * .42 * szMul / lines.length, ...lines.map(ln => fitPx(ln, font, (vert ? H * .85 : W * .94) * szMul)));
+        fpx *= shot.scale * (1 + vE * .08 + punch * .06 * params.energy);
+        shot._px = fpx;
+        ctx2d.save();
+        ctx2d.translate(cx + (shot.align === 'center' && !vert ? W * shot.xo * .5 : 0), vert ? cy : H * shot.y);
+        if (vert) ctx2d.rotate(-Math.PI / 2);
+        ctx2d.font = font(fpx);
+        ctx2d.textAlign = 'left'; ctx2d.textBaseline = 'middle';
+        const lh = fpx * 1.04, y0 = -(lines.length - 1) * lh / 2;
+        const zone = W * .86;
+        const jA = aE * fpx * .12;   // arps ripple the letters, always on
+        let frameX = 1e9, frameW = 0;
+        for (let l = 0; l < lines.length; l++) {
+          const ln = lines[l];
+          const lw = ctx2d.measureText(ln).width;
+          let x = vert || shot.align === 'center' ? -lw / 2 : shot.align === 'left' ? -zone / 2 : zone / 2 - lw;
+          frameX = Math.min(frameX, x); frameW = Math.max(frameW, lw);
+          if (T.glow) {   // soft accent bloom behind the line
+            ctx2d.shadowColor = withA(acc, .85); ctx2d.shadowBlur = Math.min(fpx * .3, 36);
+            ctx2d.fillStyle = ink;
+            ctx2d.fillText(ln, x, y0 + l * lh);
+            ctx2d.shadowBlur = 0;
+          }
+          for (let i = 0; i < ln.length; i++) {
+            const chW = ctx2d.measureText(ln[i]).width;
+            let chq = ln[i];   // SCRAMBLE corrupts glyphs at random
+            if (chq !== ' ' && Math.random() < params.scramble * .22) chq = GLYPHS[(Math.random() * GLYPHS.length) | 0];
+            const y = y0 + l * lh + Math.sin(tGlobal * 9 + i * 2.3 + l) * jA;
+            if (shot.treat === 1) {
+              ctx2d.strokeStyle = ink; ctx2d.lineWidth = Math.max(1.5, fpx * .028);
+              ctx2d.strokeText(chq, x, y);
+            } else if (shot.treat === 2) {
+              const o = fpx * .035 * (1 + punch * 1.5);
+              ctx2d.fillStyle = acc; ctx2d.fillText(chq, x + o, y + o);
+              ctx2d.fillStyle = ink; ctx2d.fillText(chq, x, y);
+            } else { ctx2d.fillStyle = ink; ctx2d.fillText(chq, x, y); }
+            x += chW;
+          }
+        }
+        if (shot.frame && !vert) {   // editorial box around the text block
+          ctx2d.strokeStyle = acc; ctx2d.lineWidth = Math.max(2, mn * .005);
+          ctx2d.strokeRect(frameX - fpx * .18, y0 - fpx * .62, frameW + fpx * .36, lines.length * lh + fpx * .2);
+        }
+        ctx2d.restore();
+        if (shot.bar) {   // accent bar rides the bass
+          const bw = W * .5 * (.25 + bE);
+          ctx2d.fillStyle = acc;
+          ctx2d.fillRect(cx - bw / 2, (vert ? cy : H * shot.y) + fpx * lines.length * .62, bw, mn * .014);
+        }
       }
-      for(let i=0;i<ln.length;i++){
-        const chW = ctx2d.measureText(ln[i]).width;
-        let chq = ln[i];   // SCRAMBLE corrupts glyphs at random
-        if(chq!==' ' && Math.random() < params.scramble*.22) chq = GLYPHS[(Math.random()*GLYPHS.length)|0];
-        const y = y0 + l*lh + Math.sin(tGlobal*9+i*2.3+l)*jA;
-        if(shot.treat===1){
-          ctx2d.strokeStyle=ink; ctx2d.lineWidth=Math.max(1.5,fpx*.028);
-          ctx2d.strokeText(chq,x,y);
-        } else if(shot.treat===2){
-          const o = fpx*.035*(1+punch*1.5);
-          ctx2d.fillStyle=acc; ctx2d.fillText(chq,x+o,y+o);
-          ctx2d.fillStyle=ink; ctx2d.fillText(chq,x,y);
-        } else { ctx2d.fillStyle=ink; ctx2d.fillText(chq,x,y); }
-        x += chW;
+
+      /* VOX → expanding word-echo rings */
+      for (const vr of voxRings) {
+        vr.age += dt * 2.2;
+        if (vr.age >= 1) continue;
+        const s2 = 1 + vr.age * 1.3;
+        ctx2d.save();
+        ctx2d.translate(cx, shot.vert ? cy : H * shot.y);
+        ctx2d.scale(s2, s2);
+        ctx2d.globalAlpha = (1 - vr.age) * .5;
+        ctx2d.font = kinFont(shot._px || mn * .18, shot.useB);
+        ctx2d.textAlign = 'center'; ctx2d.textBaseline = 'middle';
+        ctx2d.strokeStyle = acc; ctx2d.lineWidth = 2;
+        ctx2d.strokeText(splitBalanced(word)[0] || '', 0, 0);
+        ctx2d.restore();
+      }
+      ctx2d.globalAlpha = 1;
+      voxRings = voxRings.filter(v => v.age < 1);
+
+      ctx2d.restore(); /* end camera */
+
+      /* band split shots: offset alternating horizontal slices */
+      if (shot.bands) {
+        const bhh = H / shot.bands;
+        for (let i = 1; i < shot.bands; i += 2) {
+          const off = Math.sin(tGlobal * .8 + i) * W * .02 + bE * W * .07 * ((i % 3) - 1);
+          ctx2d.drawImage(cv, 0, i * bhh, W, bhh, off, i * bhh, W, bhh);
+        }
+      }
+
+      /* WARP → liquid slice displacement riding bass + arps */
+      const wAmt = params.warp * (bE * .75 + aE * .3 + .06);
+      if (wAmt > .02) {
+        const sh = Math.max(18, (H / 28) | 0);
+        for (let y = 0; y < H; y += sh) {
+          const dx = Math.sin(y * .013 + tGlobal * 3.2) * wAmt * W * .11;
+          ctx2d.drawImage(cv, 0, y, W, sh, dx, y, W, sh);
+        }
+      }
+
+      /* SCRAMBLE → datamosh block displacement */
+      if (params.scramble > .03) {
+        const n = (params.scramble * 14 | 0) + (clapFlash > .5 ? 4 : 0);
+        for (let i = 0; i < n; i++) {
+          const bw = W * (.08 + Math.random() * .3), bhh2 = H * (.02 + Math.random() * .08);
+          const sx = Math.random() * (W - bw), sy = Math.random() * (H - bhh2);
+          ctx2d.drawImage(cv, sx, sy, bw, bhh2,
+            sx + (Math.random() - .5) * W * .22 * params.scramble,
+            sy + (Math.random() - .5) * H * .07 * params.scramble, bw, bhh2);
+        }
+      }
+
+      /* HATS → ink specks */
+      for (const sp of sparks) {
+        sp.life -= dt * 3.4;
+        if (sp.life <= 0) continue;
+        ctx2d.globalAlpha = sp.life * .6;
+        ctx2d.fillStyle = ink;
+        ctx2d.fillRect(sp.x, sp.y, sp.size, sp.size);
+      }
+      ctx2d.globalAlpha = 1;
+      sparks = sparks.filter(sp => sp.life > 0);
+
+      /* ghost echo on hits (cheap: no ctx.filter — that was the frame killer) */
+      const gAmt = (punch * .9 + glitch * .7) * (.3 + params.energy);
+      if (gAmt > .12) {
+        const o = gAmt * W * .014;
+        ctx2d.globalCompositeOperation = 'lighter'; ctx2d.globalAlpha = .15;
+        ctx2d.drawImage(cv, o, 0);
+        ctx2d.globalAlpha = 1; ctx2d.globalCompositeOperation = 'source-over';
+      }
+
+      /* CLAP → border flash */
+      if (clapFlash > .03) {
+        ctx2d.globalAlpha = clapFlash;
+        ctx2d.strokeStyle = acc; ctx2d.lineWidth = mn * .02 * clapFlash + 2;
+        ctx2d.strokeRect(0, 0, W, H);
+        ctx2d.globalAlpha = 1;
+      }
+
+      /* DROP → slam: shockwave rings + hard invert frames */
+      if (dropFlash > 0) {
+        const pD = 1 - dropFlash;
+        for (let k = 0; k < 2; k++) {
+          ctx2d.globalAlpha = clamp(dropFlash * (.85 - k * .35), 0, 1);
+          ctx2d.strokeStyle = acc;
+          ctx2d.lineWidth = mn * .02 * dropFlash + 2;
+          ctx2d.beginPath();
+          ctx2d.arc(cx, cy, Math.max((pD * 1.25 + k * .18) * mn * 1.05, 1), 0, Math.PI * 2);
+          ctx2d.stroke();
+        }
+        ctx2d.globalAlpha = 1;
+        if (dropFlash > .8) {
+          ctx2d.globalCompositeOperation = 'difference';
+          ctx2d.fillStyle = '#fff'; ctx2d.fillRect(0, 0, W, H);
+          ctx2d.globalCompositeOperation = 'source-over';
+        }
+      }
+
+      /* cut pop: hard themes invert-strobe, soft themes wash accent */
+      if (T.strobe) {
+        if ((hit('kick') && params.energy > .55 && Math.random() < params.energy * .7) || cutFlash > .7) {
+          ctx2d.globalCompositeOperation = 'difference';
+          ctx2d.fillStyle = '#fff'; ctx2d.fillRect(0, 0, W, H);
+          ctx2d.globalCompositeOperation = 'source-over';
+        }
+      } else if (cutFlash > .02) {
+        ctx2d.fillStyle = withA(acc, cutFlash * .3);
+        ctx2d.fillRect(0, 0, W, H);
       }
     }
-    if(shot.frame && !vert){   // editorial box around the text block
-      ctx2d.strokeStyle = acc; ctx2d.lineWidth = Math.max(2, mn*.005);
-      ctx2d.strokeRect(frameX - fpx*.18, y0 - fpx*.62, frameW + fpx*.36, lines.length*lh + fpx*.2);
+
+    function drawFrame(dt) {
+      const W = cv.width, H = cv.height;
+      tGlobal += dt * (0.5 + params.energy * 1.2);
+
+      /* shared triggers */
+      if (hit('kick')) punch = 1;
+      punch = Math.max(0, punch - dt * 4.5);
+      if (hit('clap')) clapFlash = 1;
+      clapFlash = Math.max(0, clapFlash - dt * 7);
+      if (hit('hats')) {
+        const hE = env('hats');
+        const n = 3 + (hE * 22 | 0);
+        for (let i = 0; i < n; i++) sparks.push({
+          x: Math.random() * W, y: Math.random() * H,
+          life: 1, size: 1 + Math.random() * 2.5 * (1 + hE * 3)
+        });
+        if (sparks.length > 240) sparks.splice(0, sparks.length - 240);
+      }
+      const fxE = env('fx');
+      if (hit('fx')) glitch = Math.min(1, glitch + .55 + fxE * 2);
+      glitch *= Math.pow(.02, dt);
+      glitch = Math.max(glitch, params.scramble * .18);   // scramble keeps a glitch floor
+
+      direct(dt);
+      drawKinetic(dt);
+      postFX(dt);
+      drawHook();
     }
-    ctx2d.restore();
-    if(shot.bar){   // accent bar rides the bass
-      const bw = W*.5*(.25+bE);
-      ctx2d.fillStyle = acc;
-      ctx2d.fillRect(cx-bw/2, (vert?cy:H*shot.y) + fpx*lines.length*.62, bw, mn*.014);
+
+    /* shared post-process: clap flash, fx glitch, vignette, grain */
+    function postFX(dt) {
+      const W = cv.width, H = cv.height, cx = W / 2, cy = H / 2, mn = Math.min(W, H);
+      const bh = baseHue();
+
+      /* CLAP → frame flash */
+      if (clapFlash > .02) {
+        ctx2d.fillStyle = `hsla(${bh},15%,92%,${clapFlash * .3 * (.5 + params.energy)})`;
+        ctx2d.fillRect(0, 0, W, H);
+      }
+
+      /* FX → glitch post-process (slice displacement + ghost) */
+      if (glitch > .03) {
+        const n = 2 + (glitch * 7) | 0;
+        for (let i = 0; i < n; i++) {
+          const sy = Math.random() * H, sh = 5 + Math.random() * H * .05;
+          const dx = (Math.random() - .5) * W * .14 * glitch * (0.5 + params.scramble);
+          ctx2d.drawImage(cv, 0, sy, W, sh, dx, sy, W, sh);
+        }
+        ctx2d.globalAlpha = .16 * glitch; ctx2d.globalCompositeOperation = 'lighter';
+        ctx2d.drawImage(cv, glitch * 10 * (params.scramble + .3), 0);
+        ctx2d.globalAlpha = 1; ctx2d.globalCompositeOperation = 'source-over';
+      }
+
+      /* halftone dot screen (print theme) — one pattern fill, not a tile loop */
+      if (THEMES[themeKey].halftone) {
+        if (!dotPat) dotPat = ctx2d.createPattern(dotCv, 'repeat');
+        ctx2d.globalAlpha = .24;
+        ctx2d.globalCompositeOperation = 'overlay';
+        ctx2d.fillStyle = dotPat; ctx2d.fillRect(0, 0, W, H);
+        ctx2d.globalAlpha = 1; ctx2d.globalCompositeOperation = 'source-over';
+      }
+
+      /* light vignette + grain (SCRAMBLE dirties the grain; soft themes vignette harder) */
+      const vg = ctx2d.createRadialGradient(cx, cy, mn * .35, cx, cy, mn * .95);
+      vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, THEMES[themeKey].soft ? 'rgba(0,0,0,.34)' : 'rgba(0,0,0,.16)');
+      ctx2d.fillStyle = vg; ctx2d.fillRect(0, 0, W, H);
+      if (!grainPat) grainPat = ctx2d.createPattern(grainCv, 'repeat');
+      ctx2d.save();
+      ctx2d.globalAlpha = .06 + params.scramble * .06;
+      ctx2d.globalCompositeOperation = 'overlay';
+      ctx2d.translate(-((Math.random() * 140) | 0), -((Math.random() * 140) | 0));
+      ctx2d.fillStyle = grainPat; ctx2d.fillRect(0, 0, W + 140, H + 140);
+      ctx2d.restore();
+      ctx2d.globalCompositeOperation = 'source-over';
     }
-  }
 
-  /* VOX → expanding word-echo rings */
-  for(const vr of voxRings){
-    vr.age += dt*2.2;
-    if(vr.age>=1) continue;
-    const s2 = 1+vr.age*1.3;
-    ctx2d.save();
-    ctx2d.translate(cx, shot.vert?cy:H*shot.y);
-    ctx2d.scale(s2,s2);
-    ctx2d.globalAlpha = (1-vr.age)*.5;
-    ctx2d.font = kinFont(shot._px||mn*.18, shot.useB);
-    ctx2d.textAlign='center'; ctx2d.textBaseline='middle';
-    ctx2d.strokeStyle = acc; ctx2d.lineWidth = 2;
-    ctx2d.strokeText(splitBalanced(word)[0]||'', 0, 0);
-    ctx2d.restore();
-  }
-  ctx2d.globalAlpha = 1;
-  voxRings = voxRings.filter(v=>v.age<1);
-
-  ctx2d.restore(); /* end camera */
-
-  /* band split shots: offset alternating horizontal slices */
-  if(shot.bands){
-    const bhh = H/shot.bands;
-    for(let i=1;i<shot.bands;i+=2){
-      const off = Math.sin(tGlobal*.8+i)*W*.02 + bE*W*.07*((i%3)-1);
-      ctx2d.drawImage(cv, 0,i*bhh,W,bhh, off,i*bhh,W,bhh);
+    /* ---------- HOOK: theme-styled scroll-stopper over the clip's first seconds ----------
+       a hook style is a small painter keyed by name — add more templates here.
+       renders in preview AND export, always in the current theme's palette/fonts. */
+    let hookStyle = 'off', hookLen = 3, hookIdeaIdx = 0;
+    let lastPal = { bg: '#0b0b0c', ink: '#f2efe8', acc: 'hsl(30,90%,58%)' };
+    const HOOK_STYLE_DEFS = [['off', 'OFF'], ['caption', 'CAPTION'], ['stamp', 'STAMP'], ['glitch', 'GLITCH'], ['wait', 'WAIT BAR']];
+    const HOOK_IDEAS = [
+      "wait for the drop…",
+      "the drop at 0:15 is illegal",
+      "headphones. trust me.",
+      "this drop took 47 versions",
+      "POV: you found your new favourite producer",
+      "rate this drop 1-10",
+      "if this hits 10k i drop the full song",
+      "you are not ready for 0:20",
+      "turn it up. now.",
+      "i made this in one night",
+    ];
+    function drawHook() {
+      if (hookStyle === 'off') return;
+      const txt = ($('#hookInput').value || '').trim();
+      if (!txt) return;
+      const tIn = playhead() - clipIn;
+      if (tIn < 0 || tIn >= hookLen) return;
+      const W = cv.width, H = cv.height, cx = W / 2, mn = Math.min(W, H);
+      const p = tIn / hookLen;
+      const enter = clamp(tIn / .45, 0, 1), exit = clamp((hookLen - tIn) / .35, 0, 1);
+      const ea = 1 - Math.pow(1 - enter, 3);   // ease-out entry
+      const a = Math.min(ea, exit);
+      const up = txt.toUpperCase();
+      const hf = px => kinFont(px, false);
+      ctx2d.save();
+      ctx2d.textAlign = 'center'; ctx2d.textBaseline = 'middle';
+      ctx2d.globalAlpha = a;
+      if (hookStyle === 'caption') {
+        /* accent bar caption near the top — slides down with overshoot */
+        const fpx = Math.min(fitPx(up, hf, W * .8), H * .045);
+        ctx2d.font = hf(fpx);
+        const tw = ctx2d.measureText(up).width;
+        const y = H * .14 - (1 - ea) * H * .08;
+        ctx2d.fillStyle = lastPal.acc;
+        ctx2d.fillRect(cx - tw / 2 - fpx * .5, y - fpx * .75, tw + fpx, fpx * 1.5);
+        ctx2d.fillStyle = lastPal.bg;
+        ctx2d.fillText(up, cx, y);
+      } else if (hookStyle === 'stamp') {
+        /* big center slam: scales 2.6× → 1 with a settle wobble */
+        const lines = splitBalanced(up);
+        const fpx = Math.min(...lines.map(l => fitPx(l, hf, W * .85)), H * .11);
+        ctx2d.translate(cx, H * .3);
+        const sc = 1 + (1 - ea) * 1.6;
+        ctx2d.scale(sc, sc);
+        ctx2d.rotate((1 - ea) * .08 + Math.sin(tGlobal * 2) * .008);
+        ctx2d.font = hf(fpx);
+        lines.forEach((l, i) => {
+          const ly = (i - (lines.length - 1) / 2) * fpx * 1.1;
+          ctx2d.fillStyle = lastPal.acc; ctx2d.fillText(l, fpx * .045, ly + fpx * .045);
+          ctx2d.fillStyle = lastPal.ink; ctx2d.fillText(l, 0, ly);
+        });
+      } else if (hookStyle === 'glitch') {
+        /* corrupted glyphs resolving into the clean line */
+        const fpx = Math.min(fitPx(up, hf, W * .86), H * .07);
+        ctx2d.font = hf(fpx);
+        const resolve = clamp(tIn / 1.1, 0, 1);
+        ctx2d.textAlign = 'left';
+        let x = cx - ctx2d.measureText(up).width / 2;
+        for (let i = 0; i < up.length; i++) {
+          const chW = ctx2d.measureText(up[i]).width;
+          const bad = up[i] !== ' ' && Math.random() > resolve;
+          ctx2d.fillStyle = bad ? lastPal.acc : lastPal.ink;
+          ctx2d.fillText(bad ? GLYPHS[(Math.random() * GLYPHS.length) | 0] : up[i],
+            x, H * .2 + (Math.random() - .5) * (1 - resolve) * fpx * .4);
+          x += chW;
+        }
+      } else if (hookStyle === 'wait') {
+        /* line + progress bar filling across the hook window */
+        const fpx = Math.min(fitPx(up, hf, W * .8), H * .045);
+        ctx2d.font = hf(fpx);
+        const y = H * .15;
+        ctx2d.shadowColor = 'rgba(0,0,0,.6)'; ctx2d.shadowBlur = 8;
+        ctx2d.fillStyle = lastPal.ink;
+        ctx2d.fillText(up, cx, y);
+        ctx2d.shadowBlur = 0;
+        const bw = W * .5;
+        ctx2d.fillStyle = withA(lastPal.acc, .35);
+        ctx2d.fillRect(cx - bw / 2, y + fpx * 1.2, bw, mn * .008);
+        ctx2d.fillStyle = lastPal.acc;
+        ctx2d.fillRect(cx - bw / 2, y + fpx * 1.2, bw * p, mn * .008);
+      }
+      ctx2d.restore();
+      ctx2d.globalAlpha = 1;
     }
-  }
 
-  /* WARP → liquid slice displacement riding bass + arps */
-  const wAmt = params.warp*(bE*.75 + aE*.3 + .06);
-  if(wAmt > .02){
-    const sh = Math.max(18, (H/28)|0);
-    for(let y=0;y<H;y+=sh){
-      const dx = Math.sin(y*.013 + tGlobal*3.2)*wAmt*W*.11;
-      ctx2d.drawImage(cv, 0,y,W,sh, dx,y,W,sh);
+    /* ---------- main loop ---------- */
+    function loop() {
+      const now = performance.now();
+      const dt = clamp((now - lastFrame) / 1000, 0, .05);
+      lastFrame = now;
+      if (exporting) { requestAnimationFrame(loop); return; }   // export loop owns the canvas
+      analyse(dt);
+      drawFrame(dt);
+
+      /* meters + transport */
+      for (const s of slots) {
+        if (s.meterEl) s.meterEl.style.width = clamp(s.env * 110, 0, 100) + '%';
+      }
+      if (playing) {
+        const t = playhead();
+        if (!seekDragging) $('#seek').value = t;
+        updateClock(t);
+        if (recording && t >= clipEndT()) finishRec();
+        else if (loopClip && t >= clipEndT()) seekTo(clipIn);
+        if (playing && t >= duration) { stopAll(); startOffset = 0; }
+      }
+      /* highlight + follow the active lyric row */
+      if (lyricIdx !== lastHiRow && timeRows.length) {
+        timeRows.forEach((r, i) => r.classList.toggle('cur', i === lyricIdx));
+        if (lyricIdx >= 0 && timeRows[lyricIdx]) timeRows[lyricIdx].scrollIntoView({ block: 'nearest' });
+        lastHiRow = lyricIdx;
+      }
+      requestAnimationFrame(loop);
     }
-  }
-
-  /* SCRAMBLE → datamosh block displacement */
-  if(params.scramble > .03){
-    const n = (params.scramble*14|0) + (clapFlash>.5?4:0);
-    for(let i=0;i<n;i++){
-      const bw = W*(.08+Math.random()*.3), bhh2 = H*(.02+Math.random()*.08);
-      const sx = Math.random()*(W-bw), sy = Math.random()*(H-bhh2);
-      ctx2d.drawImage(cv, sx,sy,bw,bhh2,
-        sx+(Math.random()-.5)*W*.22*params.scramble,
-        sy+(Math.random()-.5)*H*.07*params.scramble, bw,bhh2);
+    function updateClock(t) {
+      $('#clock').textContent = fmtT(t === undefined ? startOffset : t) + ' / ' + fmtT(duration);
     }
-  }
 
-  /* HATS → ink specks */
-  for(const sp of sparks){
-    sp.life -= dt*3.4;
-    if(sp.life<=0) continue;
-    ctx2d.globalAlpha = sp.life*.6;
-    ctx2d.fillStyle = ink;
-    ctx2d.fillRect(sp.x, sp.y, sp.size, sp.size);
-  }
-  ctx2d.globalAlpha = 1;
-  sparks = sparks.filter(sp=>sp.life>0);
-
-  /* ghost echo on hits (cheap: no ctx.filter — that was the frame killer) */
-  const gAmt = (punch*.9 + glitch*.7)*(.3+params.energy);
-  if(gAmt > .12){
-    const o = gAmt*W*.014;
-    ctx2d.globalCompositeOperation='lighter'; ctx2d.globalAlpha=.15;
-    ctx2d.drawImage(cv, o, 0);
-    ctx2d.globalAlpha=1; ctx2d.globalCompositeOperation='source-over';
-  }
-
-  /* CLAP → border flash */
-  if(clapFlash > .03){
-    ctx2d.globalAlpha = clapFlash;
-    ctx2d.strokeStyle = acc; ctx2d.lineWidth = mn*.02*clapFlash + 2;
-    ctx2d.strokeRect(0,0,W,H);
-    ctx2d.globalAlpha = 1;
-  }
-
-  /* cut pop: hard themes invert-strobe, soft themes wash accent */
-  if(T.strobe){
-    if((hit('kick') && params.energy>.55 && Math.random()<params.energy*.7) || cutFlash>.7){
-      ctx2d.globalCompositeOperation='difference';
-      ctx2d.fillStyle='#fff'; ctx2d.fillRect(0,0,W,H);
-      ctx2d.globalCompositeOperation='source-over';
-    }
-  } else if(cutFlash>.02){
-    ctx2d.fillStyle = withA(acc, cutFlash*.3);
-    ctx2d.fillRect(0,0,W,H);
-  }
-}
-
-function drawFrame(dt){
-  const W=cv.width, H=cv.height;
-  tGlobal += dt * (0.5 + params.energy*1.2);
-
-  /* shared triggers */
-  if(hit('kick')) punch = 1;
-  punch = Math.max(0, punch - dt*4.5);
-  if(hit('clap')) clapFlash = 1;
-  clapFlash = Math.max(0, clapFlash - dt*7);
-  if(hit('hats')){
-    const hE = env('hats');
-    const n = 3 + (hE*22|0);
-    for(let i=0;i<n;i++) sparks.push({
-      x:Math.random()*W, y:Math.random()*H,
-      life:1, size:1+Math.random()*2.5*(1+hE*3)
-    });
-    if(sparks.length>240) sparks.splice(0, sparks.length-240);
-  }
-  const fxE = env('fx');
-  if(hit('fx')) glitch = Math.min(1, glitch + .55 + fxE*2);
-  glitch *= Math.pow(.02, dt);
-  glitch = Math.max(glitch, params.scramble*.18);   // scramble keeps a glitch floor
-
-  drawKinetic(dt);
-  postFX(dt);
-}
-
-/* shared post-process: clap flash, fx glitch, vignette, grain */
-function postFX(dt){
-  const W=cv.width, H=cv.height, cx=W/2, cy=H/2, mn=Math.min(W,H);
-  const bh = baseHue();
-
-  /* CLAP → frame flash */
-  if(clapFlash > .02){
-    ctx2d.fillStyle = `hsla(${bh},15%,92%,${clapFlash*.3*(.5+params.energy)})`;
-    ctx2d.fillRect(0,0,W,H);
-  }
-
-  /* FX → glitch post-process (slice displacement + ghost) */
-  if(glitch > .03){
-    const n = 2 + (glitch*7)|0;
-    for(let i=0;i<n;i++){
-      const sy = Math.random()*H, sh = 5 + Math.random()*H*.05;
-      const dx = (Math.random()-.5)*W*.14*glitch*(0.5+params.scramble);
-      ctx2d.drawImage(cv, 0,sy,W,sh, dx,sy,W,sh);
-    }
-    ctx2d.globalAlpha = .16*glitch; ctx2d.globalCompositeOperation='lighter';
-    ctx2d.drawImage(cv, glitch*10*(params.scramble+.3), 0);
-    ctx2d.globalAlpha = 1; ctx2d.globalCompositeOperation='source-over';
-  }
-
-  /* halftone dot screen (print theme) — one pattern fill, not a tile loop */
-  if(THEMES[themeKey].halftone){
-    if(!dotPat) dotPat = ctx2d.createPattern(dotCv,'repeat');
-    ctx2d.globalAlpha = .24;
-    ctx2d.globalCompositeOperation = 'overlay';
-    ctx2d.fillStyle = dotPat; ctx2d.fillRect(0,0,W,H);
-    ctx2d.globalAlpha = 1; ctx2d.globalCompositeOperation = 'source-over';
-  }
-
-  /* light vignette + grain (SCRAMBLE dirties the grain; soft themes vignette harder) */
-  const vg = ctx2d.createRadialGradient(cx,cy,mn*.35,cx,cy,mn*.95);
-  vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1, THEMES[themeKey].soft?'rgba(0,0,0,.34)':'rgba(0,0,0,.16)');
-  ctx2d.fillStyle=vg; ctx2d.fillRect(0,0,W,H);
-  if(!grainPat) grainPat = ctx2d.createPattern(grainCv,'repeat');
-  ctx2d.save();
-  ctx2d.globalAlpha = .06 + params.scramble*.06;
-  ctx2d.globalCompositeOperation = 'overlay';
-  ctx2d.translate(-((Math.random()*140)|0), -((Math.random()*140)|0));
-  ctx2d.fillStyle = grainPat; ctx2d.fillRect(0,0,W+140,H+140);
-  ctx2d.restore();
-  ctx2d.globalCompositeOperation='source-over';
-}
-
-/* ---------- main loop ---------- */
-function loop(){
-  const now = performance.now();
-  const dt = clamp((now-lastFrame)/1000, 0, .05);
-  lastFrame = now;
-  if(exporting){ requestAnimationFrame(loop); return; }   // export loop owns the canvas
-  analyse(dt);
-  drawFrame(dt);
-
-  /* meters + transport */
-  for(const s of slots){
-    if(s.meterEl) s.meterEl.style.width = clamp(s.env*110,0,100)+'%';
-  }
-  if(playing){
-    const t = playhead();
-    if(!seekDragging) $('#seek').value = t;
-    updateClock(t);
-    if(recording && t >= clipEndT()) finishRec();
-    else if(loopClip && t >= clipEndT()) seekTo(clipIn);
-    if(playing && t >= duration){ stopAll(); startOffset = 0; }
-  }
-  /* highlight + follow the active lyric row */
-  if(lyricIdx !== lastHiRow && timeRows.length){
-    timeRows.forEach((r,i)=>r.classList.toggle('cur', i===lyricIdx));
-    if(lyricIdx>=0 && timeRows[lyricIdx]) timeRows[lyricIdx].scrollIntoView({block:'nearest'});
-    lastHiRow = lyricIdx;
-  }
-  requestAnimationFrame(loop);
-}
-function updateClock(t){
-  $('#clock').textContent = fmtT(t===undefined?startOffset:t)+' / '+fmtT(duration);
-}
-
-/* ---------- UI: channel strips (role selector + file + mute) ---------- */
-const stripsEl = $('#strips');
-const roleSels = [];
-slots.forEach((slot, i)=>{
-  const div = document.createElement('div');
-  div.className='strip';
-  div.innerHTML = `
+    /* ---------- UI: channel strips (role selector + file + mute) ---------- */
+    const stripsEl = $('#strips');
+    const roleSels = [];
+    slots.forEach((slot, i) => {
+      const div = document.createElement('div');
+      div.className = 'strip';
+      div.innerHTML = `
     <select class="roleSel" title="what this channel drives visually"></select>
     <label class="fileLbl">
       <span class="fname">— drop audio</span>
@@ -1197,563 +1931,603 @@ slots.forEach((slot, i)=>{
       <input type="file" accept="audio/*">
     </label>
     <button class="mute" title="mute">M</button>`;
-  stripsEl.appendChild(div);
-  const sel = div.querySelector('.roleSel');
-  for(const rd of ROLE_DEFS){
-    const o = document.createElement('option');
-    o.value = rd.key; o.textContent = rd.label; o.title = rd.tip;
-    sel.appendChild(o);
-  }
-  sel.value = slot.role;
-  sel.addEventListener('change', ()=>{ slot.role = sel.value; saveLocal(); });
-  roleSels.push(sel);
-  slot.meterEl = div.querySelector('.meter i');
-  div.querySelector('input[type=file]').addEventListener('change', e=>{
-    if(e.target.files[0]) loadStem(i, e.target.files[0], div);
-  });
-  div.querySelector('.mute').addEventListener('click', ev=>{
-    slot.mute = !slot.mute;
-    if(slot.gain) slot.gain.gain.value = slot.mute?0:1;
-    ev.target.classList.toggle('on', slot.mute);
-  });
-});
-function renderTmplChips(){
-  const el = $('#tmplRow');
-  el.innerHTML = '';
-  TEMPLATES.forEach(t=>{
-    const b = document.createElement('button');
-    b.className = 'tbtn';
-    b.textContent = t.label;
-    b.title = 'preset the channel roles — customise any strip after';
-    b.addEventListener('click', ()=>{
-      t.roles.forEach((r,i)=>{ slots[i].role = r; roleSels[i].value = r; });
+      stripsEl.appendChild(div);
+      const sel = div.querySelector('.roleSel');
+      for (const rd of ROLE_DEFS) {
+        const o = document.createElement('option');
+        o.value = rd.key; o.textContent = rd.label; o.title = rd.tip;
+        sel.appendChild(o);
+      }
+      sel.value = slot.role;
+      sel.addEventListener('change', () => { slot.role = sel.value; refreshStripHints(); saveLocal(); });
+      roleSels.push(sel);
+      slot.meterEl = div.querySelector('.meter i');
+      slot.fnameEl = div.querySelector('.fname');
+      div.querySelector('input[type=file]').addEventListener('change', e => {
+        if (e.target.files[0]) loadStem(i, e.target.files[0], div);
+      });
+      div.querySelector('.mute').addEventListener('click', ev => {
+        slot.mute = !slot.mute;
+        if (slot.gain) slot.gain.gain.value = slot.mute ? 0 : 1;
+        ev.target.classList.toggle('on', slot.mute);
+      });
+    });
+    /* the drop zone of an unloaded strip says exactly what audio its role wants */
+    function refreshStripHints() {
+      slots.forEach((s, i) => {
+        const rd = ROLE_DEFS.find(r => r.key === s.role);
+        if (!s.buffer) s.fnameEl.textContent = '— drop ' + (rd ? rd.hint : 'audio');
+        roleSels[i].title = rd ? rd.tip + ' · load: ' + rd.hint : '';
+      });
+    }
+    function renderTmplChips() {
+      const el = $('#tmplRow');
+      el.innerHTML = '';
+      TEMPLATES.forEach(t => {
+        const b = document.createElement('button');
+        b.className = 'tbtn';
+        b.textContent = t.label;
+        b.title = 'preset the channel roles — customise any strip after';
+        b.addEventListener('click', () => {
+          t.roles.forEach((r, i) => { slots[i].role = r; roleSels[i].value = r; });
+          refreshStripHints();
+          saveLocal();
+          setStatus('template applied: ' + t.label);
+        });
+        el.appendChild(b);
+      });
+    }
+
+    /* ---------- UI: images + fonts + words ---------- */
+    function loadImg(file, cb) {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => cb(img);
+      img.src = url;
+    }
+    $('#imgAFile').addEventListener('change', e => {
+      const f = e.target.files[0]; if (!f) return;
+      loadImg(f, img => { imgA = img; $('#imgASlot').classList.add('loaded'); $('#imgASlot').firstChild.textContent = 'IMAGE A ✓'; });
+    });
+    $('#imgBFile').addEventListener('change', e => {
+      const f = e.target.files[0]; if (!f) return;
+      loadImg(f, img => { imgB = img; $('#imgBSlot').classList.add('loaded'); $('#imgBSlot').firstChild.textContent = 'IMAGE B ✓'; });
+    });
+    async function loadFontFile(file, slotEl, label, cb) {
+      try {
+        const data = await file.arrayBuffer();
+        const fam = 'user-font-' + (++fontN);
+        const ff = new FontFace(fam, data);
+        await ff.load(); document.fonts.add(ff);
+        slotEl.classList.add('loaded'); slotEl.firstChild.textContent = label + ' ✓';
+        cb(fam);
+        setStatus(file.name + ' loaded → ' + label, 'ok');
+      } catch (e) { setStatus('could not load font ' + file.name, 'rec'); }
+    }
+    $('#fontAFile').addEventListener('change', e => {
+      if (e.target.files[0]) loadFontFile(e.target.files[0], $('#fontASlot'), 'FONT A', f => fontAFam = f);
+    });
+    $('#fontBFile').addEventListener('change', e => {
+      if (e.target.files[0]) loadFontFile(e.target.files[0], $('#fontBSlot'), 'FONT B', f => fontBFam = f);
+    });
+    $('#wordsInput').addEventListener('input', saveLocal);
+
+    /* theme chips */
+    function renderThemeChips() {
+      const el = $('#themeRow');
+      el.innerHTML = '';
+      for (const k of Object.keys(THEMES)) {
+        const b = document.createElement('button');
+        b.className = 'tbtn' + (k === themeKey ? ' active' : '');
+        b.textContent = THEMES[k].label;
+        b.addEventListener('click', () => { themeKey = k; shot = null; renderThemeChips(); saveLocal(); });
+        el.appendChild(b);
+      }
+    }
+
+    /* hook chips */
+    function renderHookChips() {
+      const el = $('#hookStyleRow');
+      el.innerHTML = '';
+      for (const [k, lbl] of HOOK_STYLE_DEFS) {
+        const b = document.createElement('button');
+        b.className = 'tbtn' + (hookStyle === k ? ' active' : '');
+        b.textContent = lbl;
+        b.addEventListener('click', () => { hookStyle = k; renderHookChips(); saveLocal(); });
+        el.appendChild(b);
+      }
+    }
+    $('#hookIdeaBtn').addEventListener('click', () => {
+      $('#hookInput').value = HOOK_IDEAS[hookIdeaIdx++ % HOOK_IDEAS.length];
+      if (hookStyle === 'off') { hookStyle = 'caption'; renderHookChips(); }
       saveLocal();
-      setStatus('template applied: '+t.label);
     });
-    el.appendChild(b);
-  });
-}
+    document.querySelectorAll('.hookLenBtn').forEach(b => b.addEventListener('click', () => {
+      document.querySelectorAll('.hookLenBtn').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      hookLen = +b.dataset.hl;
+      saveLocal();
+    }));
+    $('#hookInput').addEventListener('input', saveLocal);
 
-/* ---------- UI: images + fonts + words ---------- */
-function loadImg(file, cb){
-  const url = URL.createObjectURL(file);
-  const img = new Image();
-  img.onload = ()=>cb(img);
-  img.src = url;
-}
-$('#imgAFile').addEventListener('change', e=>{
-  const f = e.target.files[0]; if(!f) return;
-  loadImg(f, img=>{ imgA = img; $('#imgASlot').classList.add('loaded'); $('#imgASlot').firstChild.textContent='IMAGE A ✓'; });
-});
-$('#imgBFile').addEventListener('change', e=>{
-  const f = e.target.files[0]; if(!f) return;
-  loadImg(f, img=>{ imgB = img; $('#imgBSlot').classList.add('loaded'); $('#imgBSlot').firstChild.textContent='IMAGE B ✓'; });
-});
-async function loadFontFile(file, slotEl, label, cb){
-  try{
-    const data = await file.arrayBuffer();
-    const fam = 'user-font-'+(++fontN);
-    const ff = new FontFace(fam, data);
-    await ff.load(); document.fonts.add(ff);
-    slotEl.classList.add('loaded'); slotEl.firstChild.textContent = label+' ✓';
-    cb(fam);
-    setStatus(file.name+' loaded → '+label, 'ok');
-  }catch(e){ setStatus('could not load font '+file.name, 'rec'); }
-}
-$('#fontAFile').addEventListener('change', e=>{
-  if(e.target.files[0]) loadFontFile(e.target.files[0], $('#fontASlot'), 'FONT A', f=>fontAFam=f);
-});
-$('#fontBFile').addEventListener('change', e=>{
-  if(e.target.files[0]) loadFontFile(e.target.files[0], $('#fontBSlot'), 'FONT B', f=>fontBFam=f);
-});
-$('#wordsInput').addEventListener('input', saveLocal);
+    /* filler pool chips */
+    function renderIconChips() {
+      const rowEl = $('#iconRow');
+      rowEl.innerHTML = '';
+      for (const id of ICON_LIST) {
+        const b = document.createElement('button');
+        b.className = 'tbtn' + (iconPool.has(id) ? ' active' : '');
+        b.textContent = id.toUpperCase();
+        b.title = 'toggle "' + id + '" in the filler pool';
+        b.addEventListener('click', () => {
+          iconPool.has(id) ? iconPool.delete(id) : iconPool.add(id);
+          renderIconChips(); saveLocal();
+        });
+        rowEl.appendChild(b);
+      }
+    }
 
-/* theme chips */
-function renderThemeChips(){
-  const el = $('#themeRow');
-  el.innerHTML = '';
-  for(const k of Object.keys(THEMES)){
-    const b = document.createElement('button');
-    b.className = 'tbtn'+(k===themeKey?' active':'');
-    b.textContent = THEMES[k].label;
-    b.addEventListener('click', ()=>{ themeKey = k; shot = null; renderThemeChips(); saveLocal(); });
-    el.appendChild(b);
-  }
-}
-
-/* filler pool chips */
-function renderIconChips(){
-  const rowEl = $('#iconRow');
-  rowEl.innerHTML = '';
-  for(const id of ICON_LIST){
-    const b = document.createElement('button');
-    b.className = 'tbtn'+(iconPool.has(id)?' active':'');
-    b.textContent = id.toUpperCase();
-    b.title = 'toggle "'+id+'" in the filler pool';
-    b.addEventListener('click', ()=>{
-      iconPool.has(id) ? iconPool.delete(id) : iconPool.add(id);
-      renderIconChips(); saveLocal();
-    });
-    rowEl.appendChild(b);
-  }
-}
-
-/* ---------- UI: lyrics + timing editor ---------- */
-const timeListEl = $('#timeList');
-let timeRows = [], lastHiRow = -1;
-const fmtTms = t => t==null ? '—' :
-  Math.floor(t/60)+':'+String(Math.floor(t%60)).padStart(2,'0')+'.'+String(Math.round(t%1*100)).padStart(2,'0');
-function nudgeLine(i, d){
-  if(lyricTimes[i]==null) return;
-  lyricTimes[i] = Math.max(0, lyricTimes[i]+d);
-  renderTimeList(); saveLocal();
-}
-function renderTimeList(){
-  timeListEl.innerHTML = ''; timeRows = []; lastHiRow = -1;
-  lyricLines.forEach((ln,i)=>{
-    const row = document.createElement('div');
-    row.className = 'trow';
-    row.innerHTML = `<span class="ttime">${fmtTms(lyricTimes[i])}</span>
+    /* ---------- UI: lyrics + timing editor ---------- */
+    const timeListEl = $('#timeList');
+    let timeRows = [], lastHiRow = -1;
+    const fmtTms = t => t == null ? '—' :
+      Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).padStart(2, '0') + '.' + String(Math.round(t % 1 * 100)).padStart(2, '0');
+    function nudgeLine(i, d) {
+      if (lyricTimes[i] == null) return;
+      lyricTimes[i] = Math.max(0, lyricTimes[i] + d);
+      renderTimeList(); saveLocal();
+    }
+    function renderTimeList() {
+      timeListEl.innerHTML = ''; timeRows = []; lastHiRow = -1;
+      lyricLines.forEach((ln, i) => {
+        const row = document.createElement('div');
+        row.className = 'trow';
+        row.innerHTML = `<span class="ttime">${fmtTms(lyricTimes[i])}</span>
       <button data-a="m" title="0.1s earlier (shift-click: 0.02s)">−</button>
       <button data-a="p" title="0.1s later (shift-click: 0.02s)">+</button>
       <button data-a="s" title="stamp the current playhead as this line's time">SET</button>
       <button data-a="g" title="play from 1s before this line to check the cut">▶</button>
       <span class="ttxt"></span>`;
-    row.querySelector('.ttxt').textContent = ln;
-    row.querySelector('[data-a=m]').addEventListener('click', e=>nudgeLine(i, e.shiftKey?-.02:-.1));
-    row.querySelector('[data-a=p]').addEventListener('click', e=>nudgeLine(i, e.shiftKey?.02:.1));
-    row.querySelector('[data-a=s]').addEventListener('click', ()=>{
-      lyricTimes[i] = playhead();
+        row.querySelector('.ttxt').textContent = ln;
+        row.querySelector('[data-a=m]').addEventListener('click', e => nudgeLine(i, e.shiftKey ? -.02 : -.1));
+        row.querySelector('[data-a=p]').addEventListener('click', e => nudgeLine(i, e.shiftKey ? .02 : .1));
+        row.querySelector('[data-a=s]').addEventListener('click', () => {
+          lyricTimes[i] = playhead();
+          renderTimeList(); saveLocal();
+          setStatus('line ' + (i + 1) + ' set to ' + fmtTms(lyricTimes[i]), 'ok');
+        });
+        row.querySelector('[data-a=g]').addEventListener('click', () => {
+          if (lyricTimes[i] == null) { setStatus('line has no timestamp yet — SET or tap it first', 'rec'); return; }
+          seekTo(Math.max(0, lyricTimes[i] - 1));
+          if (!playing) playAll(startOffset);
+        });
+        timeListEl.appendChild(row); timeRows.push(row);
+      });
+    }
+    function nudgeAll(d) {
+      lyricTimes = lyricTimes.map(t => t == null ? null : Math.max(0, t + d));
       renderTimeList(); saveLocal();
-      setStatus('line '+(i+1)+' set to '+fmtTms(lyricTimes[i]),'ok');
-    });
-    row.querySelector('[data-a=g]').addEventListener('click', ()=>{
-      if(lyricTimes[i]==null){ setStatus('line has no timestamp yet — SET or tap it first','rec'); return; }
-      seekTo(Math.max(0, lyricTimes[i]-1));
-      if(!playing) playAll(startOffset);
-    });
-    timeListEl.appendChild(row); timeRows.push(row);
-  });
-}
-function nudgeAll(d){
-  lyricTimes = lyricTimes.map(t=>t==null?null:Math.max(0,t+d));
-  renderTimeList(); saveLocal();
-  setStatus('all lines shifted '+(d>0?'+':'')+d.toFixed(2)+'s');
-}
-$('#allEarlier').addEventListener('click', e=>nudgeAll(e.shiftKey?-.02:-.1));
-$('#allLater').addEventListener('click', e=>nudgeAll(e.shiftKey?.02:.1));
+      setStatus('all lines shifted ' + (d > 0 ? '+' : '') + d.toFixed(2) + 's');
+    }
+    $('#allEarlier').addEventListener('click', e => nudgeAll(e.shiftKey ? -.02 : -.1));
+    $('#allLater').addEventListener('click', e => nudgeAll(e.shiftKey ? .02 : .1));
 
-$('#lyricsInput').addEventListener('input', ()=>{ syncLyricLines(); renderTimeList(); saveLocal(); });
-$('#tapBtn').addEventListener('click', e=>{
-  syncLyricLines();
-  if(!lyricLines.length){ setStatus('paste lyrics first — one line per cut','rec'); return; }
-  tapping = !tapping;
-  e.target.classList.toggle('active', tapping);
-  if(tapping){
-    tapIdx = 0;
-    setStatus('tap armed — play the song, press ENTER (or L) as each line starts');
-  } else setStatus('tap sync stopped at line '+tapIdx);
-});
-$('#lrcFile').addEventListener('change', e=>{
-  const f = e.target.files[0]; if(!f) return;
-  f.text().then(txt=>{
-    const {ls, ts} = parseLRC(txt);
-    if(!ls.length){ setStatus('no timestamped lines found in '+f.name,'rec'); return; }
-    $('#lyricsInput').value = ls.join('\n');
-    syncLyricLines();
-    lyricTimes = ts.slice();
-    renderTimeList(); saveLocal();
-    setStatus(ls.length+' timed lines imported from '+f.name,'ok');
-  });
-});
-$('#clearTimesBtn').addEventListener('click', ()=>{
-  lyricTimes = new Array(lyricLines.length).fill(null);
-  renderTimeList(); saveLocal();
-  setStatus('lyric timestamps cleared');
-});
+    $('#lyricsInput').addEventListener('input', () => { syncLyricLines(); renderTimeList(); saveLocal(); });
+    $('#tapBtn').addEventListener('click', e => {
+      syncLyricLines();
+      if (!lyricLines.length) { setStatus('paste lyrics first — one line per cut', 'rec'); return; }
+      tapping = !tapping;
+      e.target.classList.toggle('active', tapping);
+      if (tapping) {
+        tapIdx = 0;
+        setStatus('tap armed — play the song, press ENTER (or L) as each line starts');
+      } else setStatus('tap sync stopped at line ' + tapIdx);
+    });
+    $('#lrcFile').addEventListener('change', e => {
+      const f = e.target.files[0]; if (!f) return;
+      f.text().then(txt => {
+        const { ls, ts } = parseLRC(txt);
+        if (!ls.length) { setStatus('no timestamped lines found in ' + f.name, 'rec'); return; }
+        $('#lyricsInput').value = ls.join('\n');
+        syncLyricLines();
+        lyricTimes = ts.slice();
+        renderTimeList(); saveLocal();
+        setStatus(ls.length + ' timed lines imported from ' + f.name, 'ok');
+      });
+    });
+    $('#clearTimesBtn').addEventListener('click', () => {
+      lyricTimes = new Array(lyricLines.length).fill(null);
+      renderTimeList(); saveLocal();
+      setStatus('lyric timestamps cleared');
+    });
 
-/* ---------- UI: knobs ---------- */
-const KNOBS = [
-  {key:'energy',   label:'ENERGY',   tip:'punch, pump, strobe amount'},
-  {key:'cuts',     label:'CUTS',     tip:'cut rate: every 8 kicks → every kick'},
-  {key:'warp',     label:'WARP',     tip:'liquid slice-melt riding the bass'},
-  {key:'scramble', label:'SCRAMBLE', tip:'datamosh blocks + glyph corruption'},
-  {key:'hue',      label:'HUE',      tip:'palette + duotone rotation'},
-  {key:'style',    label:'STYLE',    tip:'morphs the theme palette'},
-  {key:'size',     label:'SIZE',     tip:'type + icon scale'},
-];
-const knobGrid = $('#knobGrid');
-for(const k of KNOBS){
-  const el = document.createElement('div');
-  el.className='knob'; el.title=k.tip;
-  el.innerHTML = `<div class="dial"><div class="ind"></div></div>
+    /* ---------- UI: knobs ---------- */
+    const KNOBS = [
+      { key: 'energy', label: 'ENERGY', tip: 'punch, pump, strobe amount' },
+      { key: 'cuts', label: 'CUTS', tip: 'cut rate: every 8 kicks → every kick' },
+      { key: 'warp', label: 'WARP', tip: 'liquid slice-melt riding the bass' },
+      { key: 'scramble', label: 'SCRAMBLE', tip: 'datamosh blocks + glyph corruption' },
+      { key: 'hue', label: 'HUE', tip: 'palette + duotone rotation' },
+      { key: 'style', label: 'STYLE', tip: 'morphs the theme palette' },
+      { key: 'size', label: 'SIZE', tip: 'type + icon scale' },
+    ];
+    const knobGrid = $('#knobGrid');
+    for (const k of KNOBS) {
+      const el = document.createElement('div');
+      el.className = 'knob'; el.title = k.tip;
+      el.innerHTML = `<div class="dial"><div class="ind"></div></div>
     <div class="klabel">${k.label}</div><div class="kval"></div>`;
-  knobGrid.appendChild(el);
-  const dial = el.querySelector('.dial'), ind = el.querySelector('.ind'), val = el.querySelector('.kval');
-  const render = ()=>{
-    const deg = -135 + params[k.key]*270;
-    ind.style.transform = `translateX(-50%) rotate(${deg}deg)`;
-    val.textContent = Math.round(params[k.key]*100);
-  };
-  render();
-  let dragging=false, y0=0, v0=0;
-  dial.addEventListener('pointerdown', e=>{
-    dragging=true; y0=e.clientY; v0=params[k.key];
-    dial.setPointerCapture(e.pointerId);
-  });
-  dial.addEventListener('pointermove', e=>{
-    if(!dragging) return;
-    params[k.key] = clamp(v0 + (y0-e.clientY)/160, 0, 1);
-    render();
-  });
-  dial.addEventListener('pointerup', ()=>dragging=false);
-  dial.addEventListener('dblclick', ()=>{ params[k.key]=.5; render(); });
-}
-$('#diceBtn').addEventListener('click', ()=>reseed());
-
-/* ---------- UI: transport ---------- */
-let seekDragging = false;
-$('#playBtn').addEventListener('click', ()=> playing ? (stopAll(), startOffset=playhead()) : playAll(startOffset));
-window.addEventListener('keydown', e=>{
-  const typing = /INPUT|TEXTAREA/.test(document.activeElement.tagName);
-  if(tapping && playing && (e.code==='Enter' || e.code==='KeyL') && !typing){
-    e.preventDefault();
-    if(tapIdx < lyricLines.length){
-      lyricTimes[tapIdx] = playhead(); tapIdx++;
-      renderTimeList();
-      setStatus('tapped '+tapIdx+'/'+lyricLines.length+' — "'+lyricLines[tapIdx-1]+'"');
-      if(tapIdx >= lyricLines.length){
-        tapping = false; $('#tapBtn').classList.remove('active');
-        saveLocal();
-        setStatus('lyric sync complete — '+lyricLines.length+' lines timed','ok');
-      }
-    }
-    return;
-  }
-  if(e.code==='Space' && !typing){
-    e.preventDefault();
-    playing ? (startOffset=playhead(), stopAll()) : playAll(startOffset);
-  }
-});
-$('#seek').addEventListener('input', e=>{ seekDragging=true; updateClock(+e.target.value); });
-$('#seek').addEventListener('change', e=>{ seekDragging=false; seekTo(+e.target.value); });
-$('#setInBtn').addEventListener('click', ()=>{
-  clipIn = playhead(); updateClipInfo();
-});
-document.querySelectorAll('.lenBtn').forEach(b=>b.addEventListener('click', ()=>{
-  document.querySelectorAll('.lenBtn').forEach(x=>x.classList.remove('active'));
-  b.classList.add('active');
-  clipLen = b.dataset.len==='full' ? 'full' : +b.dataset.len;
-  updateClipInfo();
-}));
-$('#loopBtn').addEventListener('click', e=>{
-  loopClip = !loopClip; e.target.classList.toggle('active', loopClip);
-});
-$('#resBtn').addEventListener('click', e=>{
-  hiRes = !hiRes;
-  recW = hiRes?1080:720; recH = hiRes?1920:1280;
-  cv.width=recW; cv.height=recH;
-  e.target.textContent = hiRes?'1080p':'720p';
-});
-function updateClipInfo(){
-  $('#clipInfo').textContent = 'in '+fmtT(clipIn)+' · '+(clipLen==='full' ? 'to end' : clipLen+'s');
-}
-
-/* ---------- recorder ---------- */
-function pickMime(){
-  const cands = [
-    'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
-    'video/mp4',
-    'video/webm;codecs=vp9,opus',
-    'video/webm'
-  ];
-  for(const m of cands) if(window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m;
-  return '';
-}
-$('#recBtn').addEventListener('click', ()=>{
-  if(exporting){ setStatus('export in progress — cancel it first','rec'); return; }
-  if(recording){ finishRec(); return; }
-  const loaded = slots.some(s=>s.buffer);
-  if(!loaded){ setStatus('load at least one stem first','rec'); return; }
-  ensureCtx();
-  recMime = pickMime();
-  if(!recMime){ setStatus('this browser cannot record — use Chrome or Safari','rec'); return; }
-  const clipEnd = Math.min(clipEndT(), duration);
-  if(clipEnd - clipIn < 1){ setStatus('clip region is outside the song — move IN point','rec'); return; }
-  stopAll();
-  const vidStream = cv.captureStream(30);   // 30fps capture: realtime encoder keeps up → far fewer dropped frames
-  const aTrack = recDest.stream.getAudioTracks()[0];
-  if(aTrack) vidStream.addTrack(aTrack);
-  recChunks = [];
-  recorder = new MediaRecorder(vidStream, {mimeType:recMime, videoBitsPerSecond: hiRes?12_000_000:8_000_000});
-  recorder.ondataavailable = e=>{ if(e.data.size) recChunks.push(e.data); };
-  recorder.onstop = saveRecording;
-  seekTo(clipIn);
-  playAll(clipIn);
-  recorder.start(1000);
-  recording = true;
-  $('#recDot').style.display='block';
-  $('#recBtn').textContent='■ STOP';
-  setStatus('recording '+(clipLen==='full' ? 'to the end of the song' : clipLen+'s clip')+' — STOP anytime · keep this tab visible','rec');
-});
-function finishRec(){
-  if(!recording) return;
-  recording = false;
-  recSecs = Math.max(1, Math.round(playhead() - clipIn));
-  try{ recorder.stop(); }catch(e){}
-  stopAll();
-  $('#recDot').style.display='none';
-  $('#recBtn').textContent='● REC';
-}
-function saveRecording(){
-  const blob = new Blob(recChunks, {type:recMime.split(';')[0]});
-  const ext = recMime.includes('mp4') ? 'mp4' : 'webm';
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'stemvis_'+seed.toString(36)+'_'+recSecs+'s.'+ext;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url), 30000);
-  setStatus('saved '+a.download+(ext==='webm'?' — TikTok web accepts webm; convert to mp4 for IG':''), 'ok');
-}
-
-/* =====================================================================
-   OFFLINE EXPORT — the post-quality path.
-   Steps the renderer frame-by-frame on a virtual clock (no realtime, no
-   dropped frames), recomputes stem envelopes/onsets mathematically from
-   the decoded audio, encodes VP9 + Opus via WebCodecs, and muxes a WebM
-   with the minimal Matroska writer below. REC stays for quick previews.
-   ===================================================================== */
-let exporting = false, exportAbort = false;
-const tick = () => new Promise(r=>setTimeout(r,0));
-
-/* per-frame envelope/onset from a decoded buffer — mirrors analyse() */
-function computeSlotFeatures(slot, t0, fps, frames){
-  const out = {env:new Float32Array(frames), onset:new Uint8Array(frames)};
-  const buf = slot.buffer, sr = buf.sampleRate;
-  const ch = buf.getChannelData(0);
-  const ch2 = buf.numberOfChannels>1 ? buf.getChannelData(1) : null;
-  let peak=0, envV=0, prev=0, lastOn=-9;
-  const dt = 1/fps, win = 1024;
-  for(let f=0; f<frames; f++){
-    const t = t0 + f*dt;
-    const c = Math.floor(t*sr);
-    let sum=0, n=0;
-    for(let i=Math.max(0,c-win); i<Math.min(ch.length,c); i+=2){
-      const v = ch2 ? (ch[i]+ch2[i])*.5 : ch[i];
-      sum += v*v; n++;
-    }
-    const rms = n ? Math.sqrt(sum/n) : 0;
-    peak = Math.max(peak*Math.pow(.5, dt/2.5), rms);
-    const nrm = peak>.006 ? clamp(rms/peak,0,1) : 0;
-    envV = nrm>envV ? nrm : lerp(envV, nrm, 1-Math.pow(.001, dt*3));
-    if(nrm-prev > .2 && nrm > .3 && (t-lastOn) > .085){ out.onset[f]=1; lastOn=t; }
-    prev = lerp(prev, nrm, .55);
-    out.env[f] = envV;
-  }
-  return out;
-}
-
-/* ---------- minimal Matroska/WebM muxer (VP9 video + Opus audio) ---------- */
-function muxWebM(o){
-  const vint = n => {
-    let len = 1;
-    while(len < 8 && n >= Math.pow(2, 7*len)-1) len++;
-    const b = new Uint8Array(len);
-    let v = n;
-    for(let i=len-1; i>0; i--){ b[i]=v&0xff; v=Math.floor(v/256); }
-    b[0] = (0x80 >> (len-1)) | v;
-    return b;
-  };
-  const uintBytes = n => { const b=[]; if(!n) b.push(0); while(n>0){ b.unshift(n&0xff); n=Math.floor(n/256); } return new Uint8Array(b); };
-  const cat = arrs => {
-    let L=0; for(const a of arrs) L+=a.length;
-    const out=new Uint8Array(L); let p=0;
-    for(const a of arrs){ out.set(a,p); p+=a.length; }
-    return out;
-  };
-  const el = (id, payload) => cat([uintBytes(id), vint(payload.length), payload]);
-  const uintEl = (id,n) => el(id, uintBytes(n));
-  const strEl = (id,s) => el(id, new TextEncoder().encode(s));
-  const floatEl = (id,f) => { const b=new Uint8Array(8); new DataView(b.buffer).setFloat64(0,f); return el(id,b); };
-
-  const ebml = el(0x1A45DFA3, cat([
-    uintEl(0x4286,1), uintEl(0x42F7,1), uintEl(0x42F2,4), uintEl(0x42F3,8),
-    strEl(0x4282,'webm'), uintEl(0x4287,4), uintEl(0x4285,2),
-  ]));
-  const info = el(0x1549A966, cat([
-    uintEl(0x2AD7B1,1000000), strEl(0x4D80,'stemvis'), strEl(0x5741,'stemvis'),
-    floatEl(0x4489,o.duration),
-  ]));
-  const vTrack = el(0xAE, cat([
-    uintEl(0xD7,1), uintEl(0x73C5,1), uintEl(0x83,1), strEl(0x86,'V_VP9'),
-    el(0xE0, cat([uintEl(0xB0,o.width), uintEl(0xBA,o.height)])),
-  ]));
-  const aParts = [uintEl(0xD7,2), uintEl(0x73C5,2), uintEl(0x83,2), strEl(0x86,'A_OPUS')];
-  if(o.opusDesc) aParts.push(el(0x63A2, o.opusDesc));
-  aParts.push(el(0xE1, cat([floatEl(0xB5,48000), uintEl(0x9F,2)])));
-  const tracks = el(0x1654AE6B, cat([vTrack, el(0xAE, cat(aParts))]));
-
-  /* interleave blocks into ~2s clusters, new cluster on video keyframes */
-  const blocks = [];
-  for(const c of o.vChunks){ const d=new Uint8Array(c.byteLength); c.copyTo(d); blocks.push({t:c.timestamp/1000, tr:1, key:c.type==='key', d}); }
-  for(const c of o.aChunks){ const d=new Uint8Array(c.byteLength); c.copyTo(d); blocks.push({t:c.timestamp/1000, tr:2, key:true, d}); }
-  blocks.sort((a,b)=> a.t-b.t || a.tr-b.tr);
-  const clusters = [];
-  let cluStart = -1, cluParts = null;
-  for(const b of blocks){
-    if(cluStart<0 || b.t-cluStart>4000 || (b.tr===1 && b.key && b.t-cluStart>=1900)){
-      if(cluParts) clusters.push(el(0x1F43B675, cat(cluParts)));
-      cluStart = Math.round(b.t);
-      cluParts = [uintEl(0xE7, cluStart)];
-    }
-    const rel = Math.round(b.t) - cluStart;
-    const head = new Uint8Array(4);
-    head[0] = 0x80 | b.tr;
-    head[1] = (rel>>8)&0xff; head[2] = rel&0xff;
-    head[3] = b.key ? 0x80 : 0;
-    cluParts.push(el(0xA3, cat([head, b.d])));
-  }
-  if(cluParts) clusters.push(el(0x1F43B675, cat(cluParts)));
-
-  return new Blob([ebml, el(0x18538067, cat([info, tracks, ...clusters]))], {type:'video/webm'});
-}
-
-/* fallback OpusHead if the encoder doesn't hand us one */
-function opusHead(){
-  const b = new Uint8Array(19);
-  b.set([0x4F,0x70,0x75,0x73,0x48,0x65,0x61,0x64]);   // "OpusHead"
-  b[8]=1; b[9]=2;                                      // version, channels
-  const dv = new DataView(b.buffer);
-  dv.setUint16(10, 312, true);                         // pre-skip
-  dv.setUint32(12, 48000, true);                       // input rate
-  return b;                                            // gain 0, mapping 0
-}
-
-async function exportClip(){
-  if(!('VideoEncoder' in window)){ setStatus('offline export needs WebCodecs — use Chrome','rec'); return; }
-  if(recording){ setStatus('stop the recording first','rec'); return; }
-  if(!slots.some(s=>s.buffer)){ setStatus('load at least one stem first','rec'); return; }
-  const fps = 30;
-  const t0 = clipIn, t1 = Math.min(clipEndT(), duration);
-  if(t1-t0 < 1){ setStatus('clip region is outside the song — move IN point','rec'); return; }
-  const frames = Math.floor((t1-t0)*fps);
-  exporting = true; exportAbort = false;
-  stopAll();
-  $('#exportBtn').textContent = '✕ CANCEL';
-
-  try{
-    setStatus('export 1/4 — analysing stems …'); await tick();
-    const feats = slots.map(s => (s.buffer && s.role!=='off') ? computeSlotFeatures(s, t0, fps, frames) : null);
-
-    setStatus('export 2/4 — mixing audio …'); await tick();
-    const oac = new OfflineAudioContext(2, Math.ceil((t1-t0)*48000), 48000);
-    for(const s of slots){
-      if(!s.buffer || s.mute) continue;
-      const src = oac.createBufferSource();
-      src.buffer = s.buffer;
-      src.connect(oac.destination);
-      if(t0 < s.buffer.duration) src.start(0, t0);
-    }
-    const mix = await oac.startRendering();
-
-    const vChunks = [], aChunks = [];
-    let opusDesc = null, encErr = null;
-    const venc = new VideoEncoder({ output:c=>vChunks.push(c), error:e=>encErr=e });
-    venc.configure({
-      codec:'vp09.00.10.08', width:recW, height:recH,
-      bitrate: hiRes?20_000_000:12_000_000, framerate:fps,
-    });
-    const aenc = new AudioEncoder({
-      output:(c,m)=>{
-        if(!opusDesc && m && m.decoderConfig && m.decoderConfig.description)
-          opusDesc = new Uint8Array(m.decoderConfig.description);
-        aChunks.push(c);
-      },
-      error:e=>encErr=e,
-    });
-    aenc.configure({codec:'opus', sampleRate:48000, numberOfChannels:2, bitrate:192_000});
-
-    const chL = mix.getChannelData(0), chR = mix.getChannelData(1);
-    for(let off=0; off<chL.length; off+=48000){
-      const n = Math.min(48000, chL.length-off);
-      const data = new Float32Array(n*2);
-      data.set(chL.subarray(off,off+n), 0);
-      data.set(chR.subarray(off,off+n), n);
-      aenc.encode(new AudioData({format:'f32-planar', sampleRate:48000, numberOfFrames:n, numberOfChannels:2, timestamp:off/48000*1e6, data}));
-    }
-
-    /* reset transient visual state so the seed's shot sequence renders clean */
-    punch=0; glitch=0; clapFlash=0; cutFlash=0; voxRings=[]; sparks=[];
-    shot=null; shotIdx=0; kickCount=0; lyricIdx=-1;
-
-    setStatus('export 3/4 — rendering frames …'); await tick();
-    for(let f=0; f<frames; f++){
-      if(exportAbort || encErr) break;
-      renderClock = t0 + f/fps;
-      slots.forEach((s,i)=>{
-        if(feats[i]){ s.env = feats[i].env[f]; s.onset = !!feats[i].onset[f]; }
-        else { s.env = 0; s.onset = false; }
+      knobGrid.appendChild(el);
+      const dial = el.querySelector('.dial'), ind = el.querySelector('.ind'), val = el.querySelector('.kval');
+      const render = () => {
+        const deg = -135 + params[k.key] * 270;
+        ind.style.transform = `translateX(-50%) rotate(${deg}deg)`;
+        val.textContent = Math.round(params[k.key] * 100);
+      };
+      render();
+      let dragging = false, y0 = 0, v0 = 0;
+      dial.addEventListener('pointerdown', e => {
+        dragging = true; y0 = e.clientY; v0 = params[k.key];
+        dial.setPointerCapture(e.pointerId);
       });
-      drawFrame(1/fps);
-      const vf = new VideoFrame(cv, {timestamp: f/fps*1e6, duration: 1e6/fps});
-      venc.encode(vf, {keyFrame: f % (fps*2) === 0});
-      vf.close();
-      if(venc.encodeQueueSize > 4) await tick();
-      if(f % fps === 0){
-        setStatus('export 3/4 — rendering '+Math.round(f/frames*100)+'% …');
-        await tick();
-      }
-    }
-    renderClock = null;
-    await venc.flush(); await aenc.flush();
-    venc.close(); aenc.close();
-    if(encErr) throw encErr;
-
-    if(exportAbort){ setStatus('export cancelled'); }
-    else {
-      setStatus('export 4/4 — muxing …'); await tick();
-      const blob = muxWebM({
-        width:recW, height:recH, duration:(t1-t0)*1000,
-        vChunks, aChunks, opusDesc: opusDesc || opusHead(),
+      dial.addEventListener('pointermove', e => {
+        if (!dragging) return;
+        params[k.key] = clamp(v0 + (y0 - e.clientY) / 160, 0, 1);
+        render();
       });
+      dial.addEventListener('pointerup', () => dragging = false);
+      dial.addEventListener('dblclick', () => { params[k.key] = .5; render(); });
+    }
+    $('#diceBtn').addEventListener('click', () => reseed());
+
+    /* ---------- UI: transport ---------- */
+    let seekDragging = false;
+    $('#playBtn').addEventListener('click', () => playing ? (stopAll(), startOffset = playhead()) : playAll(startOffset));
+    window.addEventListener('keydown', e => {
+      const typing = /INPUT|TEXTAREA/.test(document.activeElement.tagName);
+      if (tapping && playing && (e.code === 'Enter' || e.code === 'KeyL') && !typing) {
+        e.preventDefault();
+        if (tapIdx < lyricLines.length) {
+          lyricTimes[tapIdx] = playhead(); tapIdx++;
+          renderTimeList();
+          setStatus('tapped ' + tapIdx + '/' + lyricLines.length + ' — "' + lyricLines[tapIdx - 1] + '"');
+          if (tapIdx >= lyricLines.length) {
+            tapping = false; $('#tapBtn').classList.remove('active');
+            saveLocal();
+            setStatus('lyric sync complete — ' + lyricLines.length + ' lines timed', 'ok');
+          }
+        }
+        return;
+      }
+      if (e.code === 'Space' && !typing) {
+        e.preventDefault();
+        playing ? (startOffset = playhead(), stopAll()) : playAll(startOffset);
+      }
+    });
+    $('#seek').addEventListener('input', e => { seekDragging = true; updateClock(+e.target.value); });
+    $('#seek').addEventListener('change', e => { seekDragging = false; seekTo(+e.target.value); });
+    $('#setInBtn').addEventListener('click', () => {
+      clipIn = playhead(); updateClipInfo();
+    });
+    document.querySelectorAll('.lenBtn').forEach(b => b.addEventListener('click', () => {
+      document.querySelectorAll('.lenBtn').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      clipLen = b.dataset.len === 'full' ? 'full' : +b.dataset.len;
+      updateClipInfo();
+    }));
+    $('#loopBtn').addEventListener('click', e => {
+      loopClip = !loopClip; e.target.classList.toggle('active', loopClip);
+    });
+    $('#resBtn').addEventListener('click', e => {
+      hiRes = !hiRes;
+      recW = hiRes ? 1080 : 720; recH = hiRes ? 1920 : 1280;
+      cv.width = recW; cv.height = recH;
+      e.target.textContent = hiRes ? '1080p' : '720p';
+    });
+    function updateClipInfo() {
+      $('#clipInfo').textContent = 'in ' + fmtT(clipIn) + ' · ' + (clipLen === 'full' ? 'to end' : clipLen + 's');
+    }
+
+    /* ---------- recorder ---------- */
+    function pickMime() {
+      const cands = [
+        'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+        'video/mp4',
+        'video/webm;codecs=vp9,opus',
+        'video/webm'
+      ];
+      for (const m of cands) if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m;
+      return '';
+    }
+    $('#recBtn').addEventListener('click', () => {
+      if (exporting) { setStatus('export in progress — cancel it first', 'rec'); return; }
+      if (recording) { finishRec(); return; }
+      const loaded = slots.some(s => s.buffer);
+      if (!loaded) { setStatus('load at least one stem first', 'rec'); return; }
+      ensureCtx();
+      recMime = pickMime();
+      if (!recMime) { setStatus('this browser cannot record — use Chrome or Safari', 'rec'); return; }
+      const clipEnd = Math.min(clipEndT(), duration);
+      if (clipEnd - clipIn < 1) { setStatus('clip region is outside the song — move IN point', 'rec'); return; }
+      stopAll();
+      const vidStream = cv.captureStream(30);   // 30fps capture: realtime encoder keeps up → far fewer dropped frames
+      const aTrack = recDest.stream.getAudioTracks()[0];
+      if (aTrack) vidStream.addTrack(aTrack);
+      recChunks = [];
+      recorder = new MediaRecorder(vidStream, { mimeType: recMime, videoBitsPerSecond: hiRes ? 12_000_000 : 8_000_000 });
+      recorder.ondataavailable = e => { if (e.data.size) recChunks.push(e.data); };
+      recorder.onstop = saveRecording;
+      seekTo(clipIn);
+      playAll(clipIn);
+      recorder.start(1000);
+      recording = true;
+      $('#recDot').style.display = 'block';
+      $('#recBtn').textContent = '■ STOP';
+      setStatus('recording ' + (clipLen === 'full' ? 'to the end of the song' : clipLen + 's clip') + ' — STOP anytime · keep this tab visible', 'rec');
+    });
+    function finishRec() {
+      if (!recording) return;
+      recording = false;
+      recSecs = Math.max(1, Math.round(playhead() - clipIn));
+      try { recorder.stop(); } catch (e) { }
+      stopAll();
+      $('#recDot').style.display = 'none';
+      $('#recBtn').textContent = '● REC';
+    }
+    function saveRecording() {
+      const blob = new Blob(recChunks, { type: recMime.split(';')[0] });
+      const ext = recMime.includes('mp4') ? 'mp4' : 'webm';
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'stemvis_'+seed.toString(36)+'_'+Math.round(t1-t0)+'s_export.webm';
+      a.download = 'stemvis_' + seed.toString(36) + '_' + recSecs + 's.' + ext;
       document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(()=>URL.revokeObjectURL(url), 30000);
-      setStatus('saved '+a.download+' — offline render, zero dropped frames','ok');
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+      setStatus('saved ' + a.download + (ext === 'webm' ? ' — TikTok web accepts webm; convert to mp4 for IG' : ''), 'ok');
     }
-  } catch(e){
-    setStatus('export failed: '+(e && e.message ? e.message : e), 'rec');
-  }
-  renderClock = null;
-  exporting = false;
-  shot = null;                       // preview re-cuts fresh
-  slots.forEach(s=>{ s.env=0; s.onset=false; });
-  $('#exportBtn').textContent = '⇣ EXPORT';
-}
-$('#exportBtn').addEventListener('click', ()=>{
-  if(exporting){ exportAbort = true; return; }
-  exportClip();
-});
 
-/* ---------- status ---------- */
-function setStatus(msg, cls){
-  const el = $('#status');
-  el.textContent = msg;
-  el.className = cls||'';
-}
+    /* =====================================================================
+       OFFLINE EXPORT — the post-quality path.
+       Steps the renderer frame-by-frame on a virtual clock (no realtime, no
+       dropped frames), recomputes stem envelopes/onsets mathematically from
+       the decoded audio, encodes VP9 + Opus via WebCodecs, and muxes a WebM
+       with the minimal Matroska writer below. REC stays for quick previews.
+       ===================================================================== */
+    let exporting = false, exportAbort = false;
+    const tick = () => new Promise(r => setTimeout(r, 0));
 
-loadLocal();
-roleSels.forEach((s,i)=>s.value = slots[i].role);
-renderTimeList();
-renderIconChips();
-renderThemeChips();
-renderTmplChips();
-updateClipInfo();
-requestAnimationFrame(loop);
-</script>
+    /* per-frame envelope/onset from a decoded buffer — mirrors analyse() */
+    function computeSlotFeatures(slot, t0, fps, frames) {
+      const out = { env: new Float32Array(frames), onset: new Uint8Array(frames) };
+      const buf = slot.buffer, sr = buf.sampleRate;
+      const ch = buf.getChannelData(0);
+      const ch2 = buf.numberOfChannels > 1 ? buf.getChannelData(1) : null;
+      let peak = 0, envV = 0, prev = 0, lastOn = -9;
+      const dt = 1 / fps, win = 1024;
+      for (let f = 0; f < frames; f++) {
+        const t = t0 + f * dt;
+        const c = Math.floor(t * sr);
+        let sum = 0, n = 0;
+        for (let i = Math.max(0, c - win); i < Math.min(ch.length, c); i += 2) {
+          const v = ch2 ? (ch[i] + ch2[i]) * .5 : ch[i];
+          sum += v * v; n++;
+        }
+        const rms = n ? Math.sqrt(sum / n) : 0;
+        peak = Math.max(peak * Math.pow(.5, dt / 2.5), rms);
+        const nrm = peak > .006 ? clamp(rms / peak, 0, 1) : 0;
+        envV = nrm > envV ? nrm : lerp(envV, nrm, 1 - Math.pow(.001, dt * 3));
+        if (nrm - prev > .2 && nrm > .3 && (t - lastOn) > .085) { out.onset[f] = 1; lastOn = t; }
+        prev = lerp(prev, nrm, .55);
+        out.env[f] = envV;
+      }
+      return out;
+    }
+
+    /* ---------- minimal Matroska/WebM muxer (VP9 video + Opus audio) ---------- */
+    function muxWebM(o) {
+      const vint = n => {
+        let len = 1;
+        while (len < 8 && n >= Math.pow(2, 7 * len) - 1) len++;
+        const b = new Uint8Array(len);
+        let v = n;
+        for (let i = len - 1; i > 0; i--) { b[i] = v & 0xff; v = Math.floor(v / 256); }
+        b[0] = (0x80 >> (len - 1)) | v;
+        return b;
+      };
+      const uintBytes = n => { const b = []; if (!n) b.push(0); while (n > 0) { b.unshift(n & 0xff); n = Math.floor(n / 256); } return new Uint8Array(b); };
+      const cat = arrs => {
+        let L = 0; for (const a of arrs) L += a.length;
+        const out = new Uint8Array(L); let p = 0;
+        for (const a of arrs) { out.set(a, p); p += a.length; }
+        return out;
+      };
+      const el = (id, payload) => cat([uintBytes(id), vint(payload.length), payload]);
+      const uintEl = (id, n) => el(id, uintBytes(n));
+      const strEl = (id, s) => el(id, new TextEncoder().encode(s));
+      const floatEl = (id, f) => { const b = new Uint8Array(8); new DataView(b.buffer).setFloat64(0, f); return el(id, b); };
+
+      const ebml = el(0x1A45DFA3, cat([
+        uintEl(0x4286, 1), uintEl(0x42F7, 1), uintEl(0x42F2, 4), uintEl(0x42F3, 8),
+        strEl(0x4282, 'webm'), uintEl(0x4287, 4), uintEl(0x4285, 2),
+      ]));
+      const info = el(0x1549A966, cat([
+        uintEl(0x2AD7B1, 1000000), strEl(0x4D80, 'stemvis'), strEl(0x5741, 'stemvis'),
+        floatEl(0x4489, o.duration),
+      ]));
+      const vTrack = el(0xAE, cat([
+        uintEl(0xD7, 1), uintEl(0x73C5, 1), uintEl(0x83, 1), strEl(0x86, 'V_VP9'),
+        el(0xE0, cat([uintEl(0xB0, o.width), uintEl(0xBA, o.height)])),
+      ]));
+      const aParts = [uintEl(0xD7, 2), uintEl(0x73C5, 2), uintEl(0x83, 2), strEl(0x86, 'A_OPUS')];
+      if (o.opusDesc) aParts.push(el(0x63A2, o.opusDesc));
+      aParts.push(el(0xE1, cat([floatEl(0xB5, 48000), uintEl(0x9F, 2)])));
+      const tracks = el(0x1654AE6B, cat([vTrack, el(0xAE, cat(aParts))]));
+
+      /* interleave blocks into ~2s clusters, new cluster on video keyframes */
+      const blocks = [];
+      for (const c of o.vChunks) { const d = new Uint8Array(c.byteLength); c.copyTo(d); blocks.push({ t: c.timestamp / 1000, tr: 1, key: c.type === 'key', d }); }
+      for (const c of o.aChunks) { const d = new Uint8Array(c.byteLength); c.copyTo(d); blocks.push({ t: c.timestamp / 1000, tr: 2, key: true, d }); }
+      blocks.sort((a, b) => a.t - b.t || a.tr - b.tr);
+      const clusters = [];
+      let cluStart = -1, cluParts = null;
+      for (const b of blocks) {
+        if (cluStart < 0 || b.t - cluStart > 4000 || (b.tr === 1 && b.key && b.t - cluStart >= 1900)) {
+          if (cluParts) clusters.push(el(0x1F43B675, cat(cluParts)));
+          cluStart = Math.round(b.t);
+          cluParts = [uintEl(0xE7, cluStart)];
+        }
+        const rel = Math.round(b.t) - cluStart;
+        const head = new Uint8Array(4);
+        head[0] = 0x80 | b.tr;
+        head[1] = (rel >> 8) & 0xff; head[2] = rel & 0xff;
+        head[3] = b.key ? 0x80 : 0;
+        cluParts.push(el(0xA3, cat([head, b.d])));
+      }
+      if (cluParts) clusters.push(el(0x1F43B675, cat(cluParts)));
+
+      return new Blob([ebml, el(0x18538067, cat([info, tracks, ...clusters]))], { type: 'video/webm' });
+    }
+
+    /* fallback OpusHead if the encoder doesn't hand us one */
+    function opusHead() {
+      const b = new Uint8Array(19);
+      b.set([0x4F, 0x70, 0x75, 0x73, 0x48, 0x65, 0x61, 0x64]);   // "OpusHead"
+      b[8] = 1; b[9] = 2;                                      // version, channels
+      const dv = new DataView(b.buffer);
+      dv.setUint16(10, 312, true);                         // pre-skip
+      dv.setUint32(12, 48000, true);                       // input rate
+      return b;                                            // gain 0, mapping 0
+    }
+
+    async function exportClip() {
+      if (!('VideoEncoder' in window)) { setStatus('offline export needs WebCodecs — use Chrome', 'rec'); return; }
+      if (recording) { setStatus('stop the recording first', 'rec'); return; }
+      if (!slots.some(s => s.buffer)) { setStatus('load at least one stem first', 'rec'); return; }
+      const fps = 30;
+      const t0 = clipIn, t1 = Math.min(clipEndT(), duration);
+      if (t1 - t0 < 1) { setStatus('clip region is outside the song — move IN point', 'rec'); return; }
+      const frames = Math.floor((t1 - t0) * fps);
+      exporting = true; exportAbort = false;
+      stopAll();
+      $('#exportBtn').textContent = '✕ CANCEL';
+
+      try {
+        setStatus('export 1/4 — analysing stems …'); await tick();
+        const feats = slots.map(s => (s.buffer && s.role !== 'off') ? computeSlotFeatures(s, t0, fps, frames) : null);
+
+        setStatus('export 2/4 — mixing audio …'); await tick();
+        const oac = new OfflineAudioContext(2, Math.ceil((t1 - t0) * 48000), 48000);
+        for (const s of slots) {
+          if (!s.buffer || s.mute) continue;
+          const src = oac.createBufferSource();
+          src.buffer = s.buffer;
+          src.connect(oac.destination);
+          if (t0 < s.buffer.duration) src.start(0, t0);
+        }
+        const mix = await oac.startRendering();
+
+        const vChunks = [], aChunks = [];
+        let opusDesc = null, encErr = null;
+        const venc = new VideoEncoder({ output: c => vChunks.push(c), error: e => encErr = e });
+        venc.configure({
+          codec: 'vp09.00.10.08', width: recW, height: recH,
+          bitrate: hiRes ? 20_000_000 : 12_000_000, framerate: fps,
+        });
+        const aenc = new AudioEncoder({
+          output: (c, m) => {
+            if (!opusDesc && m && m.decoderConfig && m.decoderConfig.description)
+              opusDesc = new Uint8Array(m.decoderConfig.description);
+            aChunks.push(c);
+          },
+          error: e => encErr = e,
+        });
+        aenc.configure({ codec: 'opus', sampleRate: 48000, numberOfChannels: 2, bitrate: 192_000 });
+
+        const chL = mix.getChannelData(0), chR = mix.getChannelData(1);
+        for (let off = 0; off < chL.length; off += 48000) {
+          const n = Math.min(48000, chL.length - off);
+          const data = new Float32Array(n * 2);
+          data.set(chL.subarray(off, off + n), 0);
+          data.set(chR.subarray(off, off + n), n);
+          aenc.encode(new AudioData({ format: 'f32-planar', sampleRate: 48000, numberOfFrames: n, numberOfChannels: 2, timestamp: off / 48000 * 1e6, data }));
+        }
+
+        /* reset transient visual + director state so the seed's sequence renders clean */
+        punch = 0; glitch = 0; clapFlash = 0; cutFlash = 0; voxRings = []; sparks = [];
+        shot = null; shotIdx = 0; kickCount = 0; lyricIdx = -1;
+        songE = 0; songESlow = 0; section = 'chill'; buildAmt = 0; dropFlash = 0; lastDropT = -1e9;
+        kickSinceCut = 0; nextCutKicks = 4;
+
+        setStatus('export 3/4 — rendering frames …'); await tick();
+        for (let f = 0; f < frames; f++) {
+          if (exportAbort || encErr) break;
+          renderClock = t0 + f / fps;
+          slots.forEach((s, i) => {
+            if (feats[i]) { s.env = feats[i].env[f]; s.onset = !!feats[i].onset[f]; }
+            else { s.env = 0; s.onset = false; }
+          });
+          drawFrame(1 / fps);
+          const vf = new VideoFrame(cv, { timestamp: f / fps * 1e6, duration: 1e6 / fps });
+          venc.encode(vf, { keyFrame: f % (fps * 2) === 0 });
+          vf.close();
+          if (venc.encodeQueueSize > 4) await tick();
+          if (f % fps === 0) {
+            setStatus('export 3/4 — rendering ' + Math.round(f / frames * 100) + '% …');
+            await tick();
+          }
+        }
+        renderClock = null;
+        await venc.flush(); await aenc.flush();
+        venc.close(); aenc.close();
+        if (encErr) throw encErr;
+
+        if (exportAbort) { setStatus('export cancelled'); }
+        else {
+          setStatus('export 4/4 — muxing …'); await tick();
+          const blob = muxWebM({
+            width: recW, height: recH, duration: (t1 - t0) * 1000,
+            vChunks, aChunks, opusDesc: opusDesc || opusHead(),
+          });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'stemvis_' + seed.toString(36) + '_' + Math.round(t1 - t0) + 's_export.webm';
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 30000);
+          setStatus('saved ' + a.download + ' — offline render, zero dropped frames', 'ok');
+        }
+      } catch (e) {
+        setStatus('export failed: ' + (e && e.message ? e.message : e), 'rec');
+      }
+      renderClock = null;
+      exporting = false;
+      shot = null;                       // preview re-cuts fresh
+      slots.forEach(s => { s.env = 0; s.onset = false; });
+      $('#exportBtn').textContent = '⇣ EXPORT';
+    }
+    $('#exportBtn').addEventListener('click', () => {
+      if (exporting) { exportAbort = true; return; }
+      exportClip();
+    });
+
+    /* ---------- status ---------- */
+    function setStatus(msg, cls) {
+      const el = $('#status');
+      el.textContent = msg;
+      el.className = cls || '';
+    }
+
+    loadLocal();
+    roleSels.forEach((s, i) => s.value = slots[i].role);
+    refreshStripHints();
+    renderTimeList();
+    renderIconChips();
+    renderThemeChips();
+    renderTmplChips();
+    renderHookChips();
+    updateClipInfo();
+    requestAnimationFrame(loop);
+  </script>
 </body>
+
 </html>
