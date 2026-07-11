@@ -18,7 +18,9 @@ Live version (once GitHub Pages is enabled):
 
 1. Export **full-length, aligned** stems from FL Studio (File → Export →
    split mixer tracks — trimmed solo-bounces lose arrangement timing)
-2. Load stems into the eight channels: KICK / BASS / CLAP / HATS / CHORDS / ARPS / VOX / FX
+2. Pick a channel template (8 STEMS / 4-TRACK / 1 FILE) and load audio;
+   each strip's role selector decides what that audio drives visually
+   (PUNCH / GROOVE / SNAP / TICK / WASH / SPARK / VOICE / BREAK / MIX / OFF)
 3. Add assets: IMAGE A/B (become full-bleed duotone shots), FONT A/B
    (your own .ttf/.otf, loads fully offline), WORDS (cuts pick from these)
 4. Lyrics: paste lines → **TAP SYNC** → play the song and press ENTER as each
@@ -50,7 +52,7 @@ Keep the tab visible while recording — capture is real-time.
   per-letter ripple · vox: type swell + expanding word-echo rings ·
   fx: glitch storm + forced cut
 - **Themes** — named aesthetics (MONO bold b&w · OCCULT glowing halo +
-  serif · PRINT halftone colour fields · VELVET soft dark glow). A theme
+  serif · PRINT halftone colour fields). A theme
   bundles palette recipe, image treatment, type voice, texture, motion
   feel, and shot-mode weights; DICE + knobs vary *within* the theme, so
   re-running the same song under a different theme yields a different

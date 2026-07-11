@@ -104,12 +104,18 @@
   }
 
   /* channel strips */
+  #tmplRow{display:flex; gap:8px; margin-top:8px;}
+  #tmplRow .tbtn{flex:1; padding:6px 4px; font-size:10px;}
   .strip{
-    display:grid; grid-template-columns:64px 1fr 30px; gap:8px; align-items:center;
+    display:grid; grid-template-columns:78px 1fr 30px; gap:8px; align-items:center;
     padding:7px 8px; background:var(--panel2); border:1px solid var(--line); margin-top:6px;
   }
-  .strip .role{font-size:10px; letter-spacing:.12em; color:var(--dim); font-weight:700;}
-  .strip.loaded .role{color:var(--led);}
+  .roleSel{
+    width:78px; background:var(--panel3); border:1px solid var(--line); color:var(--dim);
+    font-family:var(--mono); font-size:9px; letter-spacing:.08em; font-weight:700;
+    padding:5px 2px; cursor:pointer; outline:none;
+  }
+  .roleSel:hover, .strip.loaded .roleSel{color:var(--led); border-color:var(--faint);}
   .strip .fileLbl{
     position:relative; overflow:hidden; display:flex; flex-direction:column; gap:4px; cursor:pointer; min-width:0;
   }
@@ -214,7 +220,8 @@
   <!-- ================= LEFT RACK — setup: stems + assets ================= -->
   <aside class="rack" id="rackL">
     <div>
-      <div class="section-label">CHANNELS — one audio file per element</div>
+      <div class="section-label">CHANNELS — any stems, any song</div>
+      <div id="tmplRow"></div>
       <div id="strips"></div>
     </div>
 
@@ -239,8 +246,9 @@
     </div>
 
     <div class="note">
-      <b>flow:</b> export full-length aligned stems from FL (split mixer tracks) → load channels →
-      paste lyrics + TAP SYNC → play, DICE + knobs → SET IN at the hook → REC.
+      <b>flow:</b> export full-length aligned stems (or a 4-track split, or just the mix) →
+      pick a channel TEMPLATE, load audio, adjust any strip's role →
+      paste lyrics + TAP SYNC → play, THEME + DICE + knobs → SET IN at the hook → REC.
       the visual hard-CUTS to a new shot every N kicks (<b>CUTS</b> knob: every 8 → every kick);
       timed lyric lines force their own cut, and the FX stem forces cuts too.
       kick pumps + strobes (<b>ENERGY</b>) · bass drives the <b>WARP</b> slice-melt · vox echoes the word ·
@@ -338,18 +346,29 @@ function mulberry32(seed){
 const fmtT = s => { s=Math.max(0,s); const m=Math.floor(s/60), r=Math.floor(s%60); return m+':'+String(r).padStart(2,'0'); };
 
 /* ---------- state ---------- */
-const ROLES = [
-  {key:'kick',   label:'KICK'},
-  {key:'bass',   label:'BASS'},
-  {key:'clap',   label:'CLAP'},
-  {key:'hats',   label:'HATS'},
-  {key:'chords', label:'CHORDS'},
-  {key:'arps',   label:'ARPS'},
-  {key:'vox',    label:'VOX'},
-  {key:'fx',     label:'FX'},
+/* channel slots — any song, any stems. a slot's REACTION ROLE decides what
+   its audio drives visually. templates preset the mapping in one click;
+   the per-strip selector gives full control when you want it. */
+const ROLE_DEFS = [
+  {key:'kick',   label:'PUNCH',  tip:'pumps the frame, strobes, drives the cuts'},
+  {key:'bass',   label:'GROOVE', tip:'warp slice-melt, row slides'},
+  {key:'clap',   label:'SNAP',   tip:'frame + border flash'},
+  {key:'hats',   label:'TICK',   tip:'camera stutter + ink specks'},
+  {key:'chords', label:'WASH',   tip:'background colour breathing'},
+  {key:'arps',   label:'SPARK',  tip:'letter ripple, satellite kicks'},
+  {key:'vox',    label:'VOICE',  tip:'type swell + word echoes'},
+  {key:'fx',     label:'BREAK',  tip:'glitch storm + forced cuts'},
+  {key:'mix',    label:'MIX',    tip:'a full mix drives punch/groove/wash/voice at once'},
+  {key:'off',    label:'OFF',    tip:'audio plays but drives nothing'},
 ];
+const TEMPLATES = [
+  {label:'8 STEMS', roles:['kick','bass','clap','hats','chords','arps','vox','fx']},
+  {label:'4-TRACK', roles:['kick','bass','chords','vox','off','off','off','off']},
+  {label:'1 FILE',  roles:['mix','off','off','off','off','off','off','off']},
+];
+const slots = TEMPLATES[0].roles.map(role=>({role, buffer:null, mute:false}));
+const MIX_ROLES = {kick:1, bass:1, chords:1, vox:1};   // what a MIX slot feeds
 let actx = null, masterGain = null, recDest = null;
-const stems = {};           // key → {buffer, gain, analyser, timeData, freqData, env, peak, onset, centroid, mute, name}
 let duration = 0;
 let playing = false, startCtxTime = 0, startOffset = 0;
 let clipIn = 0, clipLen = 15, loopClip = false;   // clipLen: seconds, or 'full' (to end of song)
@@ -357,15 +376,22 @@ let recording = false, recorder = null, recChunks = [], recMime = '', recSecs = 
 const clipEndT = () => clipLen==='full' ? duration : clipIn + clipLen;
 let recW = 720, recH = 1280, hiRes = false;
 
-const params = { energy:.7, cuts:.5, warp:.35, scramble:.2, hue:.58, style:.5, size:.45 };
+const params = { energy:.7, cuts:.5, warp:.35, scramble:.12, hue:.58, style:.5, size:.45 };
 let seed = (Math.random()*1e9)|0;
 let rng = mulberry32(seed);
 
-/* kinetic shot state — DICE resets, every cut regenerates */
-let shot = null, shotIdx = 0, kickCount = 0, lastCutReal = 0, cutFlash = 0;
+/* kinetic shot state — DICE resets, every cut regenerates.
+   layoutBias makes each seed structurally different (composition anchor,
+   overall scale, drift), not just a different shot order. */
+let shot = null, shotIdx = 0, kickCount = 0, lastCutReal = 0, cutFlash = 0, layoutBias = null;
 function reseed(newSeed){
   seed = newSeed===undefined ? (Math.random()*1e9)|0 : newSeed;
   rng = mulberry32(seed);
+  layoutBias = {
+    align: ['center','center','left','right'][(rng()*4)|0],
+    scale: .68 + rng()*.42,
+    xDrift: (rng()*2-1)*.1,
+  };
   shot = null; shotIdx = 0;
   $('#seedTag').textContent = 'seed '+seed.toString(36);
 }
@@ -380,7 +406,7 @@ function ensureCtx(){
   recDest = actx.createMediaStreamDestination();
   masterGain.connect(recDest);
 }
-async function loadStem(key, file, stripEl){
+async function loadStem(idx, file, stripEl){
   ensureCtx();
   setStatus('decoding '+file.name+' …');
   const buf = await file.arrayBuffer();
@@ -388,8 +414,8 @@ async function loadStem(key, file, stripEl){
   try{ audio = await actx.decodeAudioData(buf); }
   catch(e){ setStatus('could not decode '+file.name, 'rec'); return; }
   const wasPlaying = playing; if(playing) stopAll();
-  const s = stems[key] || {};
-  s.buffer = audio; s.name = file.name; s.mute = s.mute||false;
+  const s = slots[idx];
+  s.buffer = audio; s.name = file.name;
   s.gain = actx.createGain();
   s.analyser = actx.createAnalyser();
   s.analyser.fftSize = 1024; s.analyser.smoothingTimeConstant = .5;
@@ -398,19 +424,19 @@ async function loadStem(key, file, stripEl){
   s.env = 0; s.prevRms = 0; s.peak = 0; s.onset = false; s.lastOnsetT = 0; s.centroid = .5;
   s.gain.connect(s.analyser); s.analyser.connect(masterGain);
   s.gain.gain.value = s.mute ? 0 : 1;
-  stems[key] = s;
-  duration = Math.max(...Object.values(stems).map(x=>x.buffer?x.buffer.duration:0));
+  duration = Math.max(...slots.map(x=>x.buffer?x.buffer.duration:0));
   $('#seek').max = duration;
   stripEl.classList.add('loaded');
   stripEl.querySelector('.fname').textContent = file.name;
-  setStatus(file.name+' loaded → '+key.toUpperCase(), 'ok');
+  const rd = ROLE_DEFS.find(r=>r.key===s.role);
+  setStatus(file.name+' loaded → '+(rd?rd.label:'SLOT '+(idx+1)), 'ok');
   updateClock();
   if(wasPlaying) playAll(startOffset);
 }
 function playAll(offset){
   ensureCtx();
   if(actx.state==='suspended') actx.resume();
-  const loaded = Object.values(stems).filter(s=>s.buffer);
+  const loaded = slots.filter(s=>s.buffer);
   if(!loaded.length){ setStatus('load at least one stem first','rec'); return; }
   offset = clamp(offset||0, 0, Math.max(0,duration-.05));
   for(const s of loaded){
@@ -423,7 +449,7 @@ function playAll(offset){
   playing = true; $('#playBtn').textContent='❚❚';
 }
 function stopAll(){
-  for(const s of Object.values(stems)){
+  for(const s of slots){
     if(s.src){ try{s.src.stop();}catch(e){} s.src.disconnect(); s.src=null; }
   }
   playing = false; $('#playBtn').textContent='►';
@@ -440,8 +466,7 @@ function seekTo(t){
 /* ---------- feature extraction ---------- */
 function analyse(dt){
   const now = performance.now()/1000;
-  for(const key of Object.keys(stems)){
-    const s = stems[key];
+  for(const s of slots){
     if(!s.buffer || !s.analyser){ continue; }
     s.analyser.getFloatTimeDomainData(s.timeData);
     let sum=0;
@@ -467,12 +492,27 @@ function analyse(dt){
     if(den>40) s.centroid = lerp(s.centroid, clamp((num/den)/(N*.45),0,1), .3);
   }
 }
-const env = key => (stems[key] && !stems[key].mute) ? stems[key].env : 0;
-const hit = key => (stems[key] && !stems[key].mute) ? stems[key].onset : false;
+/* role queries aggregate every slot assigned that role; MIX slots feed several */
+function env(role){
+  let m = 0;
+  for(const s of slots){
+    if(!s.buffer || s.mute) continue;
+    if(s.role===role || (s.role==='mix' && MIX_ROLES[role])) m = Math.max(m, s.env);
+  }
+  return m;
+}
+function hit(role){
+  for(const s of slots){
+    if(!s.buffer || s.mute) continue;
+    if((s.role===role || (s.role==='mix' && role==='kick')) && s.onset) return true;
+  }
+  return false;
+}
 
 /* ---------- renderer ---------- */
 const cv = $('#viz'), ctx2d = cv.getContext('2d', {alpha:false});
 let sparks = [], voxRings = [], punch = 0, glitch = 0, clapFlash = 0, tGlobal = 0, lastFrame = performance.now();
+let dotPat = null, grainPat = null;   // cached canvas patterns
 let imgA = null, imgB = null;
 const GLYPHS = '#%&@$0X§?!';
 
@@ -518,11 +558,6 @@ const THEMES = {
     weights:{icon:2, iconField:2, type:2, stack:1, wall:2, art:4},
     serif:0, italic:0, glow:0, aura:0, halftone:1, strobe:1, soft:0, motion:1,
     duo:{hueOff:-6, loS:75, loL:14, hiS:20, hiL:88},
-  },
-  velvet: { label:'VELVET',   // deep soft dark, italic serif glow, slow drift
-    weights:{icon:1, iconField:0, type:3, stack:1, wall:0, art:4},
-    serif:1, italic:1, glow:1, aura:.6, halftone:0, strobe:0, soft:1, motion:.55,
-    duo:{hueOff:0, loS:70, loL:7, hiS:35, hiL:78},
   },
 };
 let themeKey = 'mono';
@@ -648,7 +683,7 @@ function parseLRC(txt){
 }
 function saveLocal(){
   try{ localStorage.setItem('stemvis', JSON.stringify({
-    words:$('#wordsInput').value, lyr:$('#lyricsInput').value, times:lyricTimes, icons:[...iconPool], theme:themeKey
+    words:$('#wordsInput').value, lyr:$('#lyricsInput').value, times:lyricTimes, icons:[...iconPool], theme:themeKey, roles:slots.map(s=>s.role)
   })); }catch(e){}
 }
 function loadLocal(){
@@ -660,6 +695,9 @@ function loadLocal(){
     if(Array.isArray(d.times)) for(let i=0;i<lyricLines.length;i++) lyricTimes[i] = d.times[i] ?? null;
     if(Array.isArray(d.icons)) iconPool = new Set(d.icons.filter(i=>ICON_LIST.includes(i)));
     if(d.theme && THEMES[d.theme]) themeKey = d.theme;
+    if(Array.isArray(d.roles)) d.roles.forEach((r,i)=>{
+      if(slots[i] && ROLE_DEFS.some(x=>x.key===r)) slots[i].role = r;
+    });
   }catch(e){}
 }
 
@@ -706,6 +744,10 @@ function newShot(){
     bands: r()<.25 ? 2+(r()*3|0) : 0,
     bar: r()<.5,
     treat: (r()*3)|0,            // 0 fill · 1 outline · 2 offset-shadow
+    align: r()<.55 ? layoutBias.align : ['center','left','right'][(r()*3)|0],
+    scale: clamp(layoutBias.scale*(.8+r()*.45), .5, 1.15),
+    frame: r()<.18,
+    xo: layoutBias.xDrift + (r()*2-1)*.08,
     useB: !!fontBFam && r()<.5,
     imgPick: r()<.5,
     _px: 0,
@@ -747,10 +789,6 @@ function drawKinetic(dt){
     bg = `hsl(${bh},${45+st*40}%,${18+st*22+chE*8}%)`;
     ink = `hsl(${bh},18%,94%)`;
     acc = `hsl(${(bh+150)%360},90%,${60+st*15}%)`;
-  } else if(themeKey==='velvet'){
-    bg = `hsl(${bh},${40+st*30}%,${6+chE*6}%)`;
-    ink = `hsl(${bh},${25+st*30}%,82%)`;
-    acc = `hsl(${(bh+30)%360},70%,72%)`;
   } else { /* mono: STYLE walks b&w → tinted dark → full colour field */
     if(st<.33){ bg=`hsl(${bh},${(chE*25)|0}%,${4+chE*7}%)`; ink=`hsl(${bh},6%,93%)`; acc=`hsl(${bh},90%,58%)`; }
     else if(st<.66){ bg=`hsl(${bh},55%,${7+chE*9}%)`; ink=`hsl(${bh},12%,93%)`; acc=`hsl(${(bh+45)%360},95%,60%)`; }
@@ -783,8 +821,8 @@ function drawKinetic(dt){
 
   if(shot.mode==='art' && shotImg()){
     const dc = duotone(shotImg());
-    const sc = Math.max(W/dc.width, H/dc.height)*(1.05 + shotAge*.04*shot.zDir);
-    ctx2d.drawImage(dc, cx-dc.width*sc/2, cy-dc.height*sc/2, dc.width*sc, dc.height*sc);
+    const sc = Math.max(W/dc.width, H/dc.height)*(1.12 + shotAge*.04*shot.zDir);
+    ctx2d.drawImage(dc, cx-dc.width*sc/2 + W*shot.xo*.4, cy-dc.height*sc/2, dc.width*sc, dc.height*sc);
     if(word){
       const lines = splitBalanced(word);
       const fpx = Math.min(...lines.map(ln=>fitPx(ln,font,W*.8*szMul)), H*.14*szMul*1.2)*(1+vE*.07);
@@ -805,10 +843,10 @@ function drawKinetic(dt){
   } else if(shot.mode==='icon' && shot.icon){
     /* one big icon — bass/vox swell it, kick pumps it, arps kick the satellites */
     ctx2d.save();
-    ctx2d.translate(cx, H*shot.y);
+    ctx2d.translate(cx + W*shot.xo*.6, H*shot.y);
     ctx2d.rotate(tGlobal*shot.spin + Math.sin(tGlobal*.7)*.1);
-    const s = mn*.26*szMul*(1+bE*.3+vE*.12)*(1+punch*.14*(.4+params.energy));
-    if(T.glow){ ctx2d.shadowColor = withA(acc,.9); ctx2d.shadowBlur = s*.4; }
+    const s = mn*.26*szMul*shot.scale*(1+bE*.3+vE*.12)*(1+punch*.14*(.4+params.energy));
+    if(T.glow){ ctx2d.shadowColor = withA(acc,.9); ctx2d.shadowBlur = Math.min(s*.4, 40); }
     paintIcon(shot.icon, s, ink, acc, shot.treat);
     ctx2d.shadowBlur = 0;
     ctx2d.restore();
@@ -878,24 +916,28 @@ function drawKinetic(dt){
         ctx2d.globalAlpha = 1;
       }
     }
-  } else if(word){ /* type — the huge word / lyric line */
+  } else if(word){ /* type — the huge word / lyric line; align + scale vary per shot */
     const lines = splitBalanced(word);
     const vert = shot.vert && lines.length===1;
     let fpx = Math.min(H*.42*szMul/lines.length, ...lines.map(ln=>fitPx(ln,font, (vert?H*.85:W*.94)*szMul)));
-    fpx *= 1 + vE*.08 + punch*.06*params.energy;
+    fpx *= shot.scale * (1 + vE*.08 + punch*.06*params.energy);
     shot._px = fpx;
     ctx2d.save();
-    ctx2d.translate(cx, vert ? cy : H*shot.y);
+    ctx2d.translate(cx + (shot.align==='center'&&!vert ? W*shot.xo*.5 : 0), vert ? cy : H*shot.y);
     if(vert) ctx2d.rotate(-Math.PI/2);
     ctx2d.font = font(fpx);
     ctx2d.textAlign='left'; ctx2d.textBaseline='middle';
     const lh = fpx*1.04, y0 = -(lines.length-1)*lh/2;
+    const zone = W*.86;
     const jA = aE*fpx*.12;   // arps ripple the letters, always on
+    let frameX = 1e9, frameW = 0;
     for(let l=0;l<lines.length;l++){
       const ln = lines[l];
-      let x = -ctx2d.measureText(ln).width/2;
+      const lw = ctx2d.measureText(ln).width;
+      let x = vert||shot.align==='center' ? -lw/2 : shot.align==='left' ? -zone/2 : zone/2-lw;
+      frameX = Math.min(frameX, x); frameW = Math.max(frameW, lw);
       if(T.glow){   // soft accent bloom behind the line
-        ctx2d.shadowColor = withA(acc,.85); ctx2d.shadowBlur = fpx*.3;
+        ctx2d.shadowColor = withA(acc,.85); ctx2d.shadowBlur = Math.min(fpx*.3, 36);
         ctx2d.fillStyle = ink;
         ctx2d.fillText(ln, x, y0 + l*lh);
         ctx2d.shadowBlur = 0;
@@ -915,6 +957,10 @@ function drawKinetic(dt){
         } else { ctx2d.fillStyle=ink; ctx2d.fillText(chq,x,y); }
         x += chW;
       }
+    }
+    if(shot.frame && !vert){   // editorial box around the text block
+      ctx2d.strokeStyle = acc; ctx2d.lineWidth = Math.max(2, mn*.005);
+      ctx2d.strokeRect(frameX - fpx*.18, y0 - fpx*.62, frameW + fpx*.36, lines.length*lh + fpx*.2);
     }
     ctx2d.restore();
     if(shot.bar){   // accent bar rides the bass
@@ -956,7 +1002,7 @@ function drawKinetic(dt){
   /* WARP → liquid slice displacement riding bass + arps */
   const wAmt = params.warp*(bE*.75 + aE*.3 + .06);
   if(wAmt > .02){
-    const sh = Math.max(10, (H/48)|0);
+    const sh = Math.max(18, (H/28)|0);
     for(let y=0;y<H;y+=sh){
       const dx = Math.sin(y*.013 + tGlobal*3.2)*wAmt*W*.11;
       ctx2d.drawImage(cv, 0,y,W,sh, dx,y,W,sh);
@@ -986,18 +1032,13 @@ function drawKinetic(dt){
   ctx2d.globalAlpha = 1;
   sparks = sparks.filter(sp=>sp.life>0);
 
-  /* chromatic ghost on hits */
+  /* ghost echo on hits (cheap: no ctx.filter — that was the frame killer) */
   const gAmt = (punch*.9 + glitch*.7)*(.3+params.energy);
   if(gAmt > .12){
-    const o = gAmt*W*.012;
-    ctx2d.save();
-    ctx2d.globalCompositeOperation='lighter'; ctx2d.globalAlpha=.22;
-    ctx2d.filter='hue-rotate(100deg) saturate(2.4)';
+    const o = gAmt*W*.014;
+    ctx2d.globalCompositeOperation='lighter'; ctx2d.globalAlpha=.15;
     ctx2d.drawImage(cv, o, 0);
-    ctx2d.filter='hue-rotate(220deg) saturate(2.4)';
-    ctx2d.drawImage(cv, -o, 0);
-    ctx2d.restore();
-    ctx2d.filter='none';
+    ctx2d.globalAlpha=1; ctx2d.globalCompositeOperation='source-over';
   }
 
   /* CLAP → border flash */
@@ -1042,7 +1083,7 @@ function drawFrame(dt){
   const fxE = env('fx');
   if(hit('fx')) glitch = Math.min(1, glitch + .55 + fxE*2);
   glitch *= Math.pow(.02, dt);
-  glitch = Math.max(glitch, params.scramble*.25);   // scramble keeps a glitch floor
+  glitch = Math.max(glitch, params.scramble*.18);   // scramble keeps a glitch floor
 
   drawKinetic(dt);
   postFX(dt);
@@ -1072,11 +1113,12 @@ function postFX(dt){
     ctx2d.globalAlpha = 1; ctx2d.globalCompositeOperation='source-over';
   }
 
-  /* halftone dot screen (print theme) */
+  /* halftone dot screen (print theme) — one pattern fill, not a tile loop */
   if(THEMES[themeKey].halftone){
+    if(!dotPat) dotPat = ctx2d.createPattern(dotCv,'repeat');
     ctx2d.globalAlpha = .24;
     ctx2d.globalCompositeOperation = 'overlay';
-    for(let x=0;x<W;x+=96) for(let y=0;y<H;y+=96) ctx2d.drawImage(dotCv,x,y);
+    ctx2d.fillStyle = dotPat; ctx2d.fillRect(0,0,W,H);
     ctx2d.globalAlpha = 1; ctx2d.globalCompositeOperation = 'source-over';
   }
 
@@ -1084,11 +1126,14 @@ function postFX(dt){
   const vg = ctx2d.createRadialGradient(cx,cy,mn*.35,cx,cy,mn*.95);
   vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1, THEMES[themeKey].soft?'rgba(0,0,0,.34)':'rgba(0,0,0,.16)');
   ctx2d.fillStyle=vg; ctx2d.fillRect(0,0,W,H);
+  if(!grainPat) grainPat = ctx2d.createPattern(grainCv,'repeat');
+  ctx2d.save();
   ctx2d.globalAlpha = .06 + params.scramble*.06;
   ctx2d.globalCompositeOperation = 'overlay';
-  const gx = (Math.random()*140)|0, gy=(Math.random()*140)|0;
-  for(let x=-gx;x<W;x+=140) for(let y=-gy;y<H;y+=140) ctx2d.drawImage(grainCv,x,y);
-  ctx2d.globalAlpha = 1; ctx2d.globalCompositeOperation='source-over';
+  ctx2d.translate(-((Math.random()*140)|0), -((Math.random()*140)|0));
+  ctx2d.fillStyle = grainPat; ctx2d.fillRect(0,0,W+140,H+140);
+  ctx2d.restore();
+  ctx2d.globalCompositeOperation='source-over';
 }
 
 /* ---------- main loop ---------- */
@@ -1100,9 +1145,8 @@ function loop(){
   drawFrame(dt);
 
   /* meters + transport */
-  for(const r of ROLES){
-    const s = stems[r.key];
-    if(s && s.meterEl) s.meterEl.style.width = clamp(s.env*110,0,100)+'%';
+  for(const s of slots){
+    if(s.meterEl) s.meterEl.style.width = clamp(s.env*110,0,100)+'%';
   }
   if(playing){
     const t = playhead();
@@ -1124,31 +1168,55 @@ function updateClock(t){
   $('#clock').textContent = fmtT(t===undefined?startOffset:t)+' / '+fmtT(duration);
 }
 
-/* ---------- UI: channel strips ---------- */
+/* ---------- UI: channel strips (role selector + file + mute) ---------- */
 const stripsEl = $('#strips');
-for(const r of ROLES){
+const roleSels = [];
+slots.forEach((slot, i)=>{
   const div = document.createElement('div');
   div.className='strip';
   div.innerHTML = `
-    <span class="role">${r.label}</span>
+    <select class="roleSel" title="what this channel drives visually"></select>
     <label class="fileLbl">
-      <span class="fname">— drop ${r.label.toLowerCase()} stem</span>
+      <span class="fname">— drop audio</span>
       <span class="meter"><i></i></span>
       <input type="file" accept="audio/*">
     </label>
     <button class="mute" title="mute">M</button>`;
   stripsEl.appendChild(div);
-  const input = div.querySelector('input');
-  input.addEventListener('change', e=>{
-    if(e.target.files[0]) loadStem(r.key, e.target.files[0], div);
+  const sel = div.querySelector('.roleSel');
+  for(const rd of ROLE_DEFS){
+    const o = document.createElement('option');
+    o.value = rd.key; o.textContent = rd.label; o.title = rd.tip;
+    sel.appendChild(o);
+  }
+  sel.value = slot.role;
+  sel.addEventListener('change', ()=>{ slot.role = sel.value; saveLocal(); });
+  roleSels.push(sel);
+  slot.meterEl = div.querySelector('.meter i');
+  div.querySelector('input[type=file]').addEventListener('change', e=>{
+    if(e.target.files[0]) loadStem(i, e.target.files[0], div);
   });
   div.querySelector('.mute').addEventListener('click', ev=>{
-    const s = stems[r.key]; if(!s) return;
-    s.mute = !s.mute;
-    if(s.gain) s.gain.gain.value = s.mute?0:1;
-    ev.target.classList.toggle('on', s.mute);
+    slot.mute = !slot.mute;
+    if(slot.gain) slot.gain.gain.value = slot.mute?0:1;
+    ev.target.classList.toggle('on', slot.mute);
   });
-  /* meter ref is attached by the MutationObserver below once the stem finishes decoding */
+});
+function renderTmplChips(){
+  const el = $('#tmplRow');
+  el.innerHTML = '';
+  TEMPLATES.forEach(t=>{
+    const b = document.createElement('button');
+    b.className = 'tbtn';
+    b.textContent = t.label;
+    b.title = 'preset the channel roles — customise any strip after';
+    b.addEventListener('click', ()=>{
+      t.roles.forEach((r,i)=>{ slots[i].role = r; roleSels[i].value = r; });
+      saveLocal();
+      setStatus('template applied: '+t.label);
+    });
+    el.appendChild(b);
+  });
 }
 
 /* ---------- UI: images + fonts + words ---------- */
@@ -1389,7 +1457,7 @@ function pickMime(){
 }
 $('#recBtn').addEventListener('click', ()=>{
   if(recording){ finishRec(); return; }
-  const loaded = Object.values(stems).some(s=>s.buffer);
+  const loaded = slots.some(s=>s.buffer);
   if(!loaded){ setStatus('load at least one stem first','rec'); return; }
   ensureCtx();
   recMime = pickMime();
@@ -1440,18 +1508,12 @@ function setStatus(msg, cls){
   el.className = cls||'';
 }
 
-/* meter refs attached once a stem strip finishes decoding */
-document.querySelectorAll('.strip').forEach((div,i)=>{
-  const key = ROLES[i].key;
-  const meterEl = div.querySelector('.meter i');
-  const obs = new MutationObserver(()=>{ if(stems[key]) stems[key].meterEl = meterEl; });
-  obs.observe(div,{attributes:true,attributeFilter:['class']});
-});
-
 loadLocal();
+roleSels.forEach((s,i)=>s.value = slots[i].role);
 renderTimeList();
 renderIconChips();
 renderThemeChips();
+renderTmplChips();
 updateClipInfo();
 requestAnimationFrame(loop);
 </script>
