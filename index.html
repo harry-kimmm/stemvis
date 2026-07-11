@@ -89,6 +89,11 @@
   }
   #recBtn:hover{background:var(--rec); color:#0d0d0f;}
   #recBtn:disabled{opacity:.4; cursor:not-allowed;}
+  #exportBtn{
+    background:var(--panel2); border:1px solid var(--led); color:var(--led);
+    font-weight:700; letter-spacing:.14em; padding:7px 16px; cursor:pointer; font-family:var(--mono); font-size:11px;
+  }
+  #exportBtn:hover{background:var(--led); color:#0d0d0f;}
   #clipInfo{font-size:11px; color:var(--faint); letter-spacing:.05em;}
 
   /* ---------- racks (left: setup · right: live controls) ---------- */
@@ -255,7 +260,8 @@
       arps ripple letters · hats stutter + specks · clap flashes the border · chords breathe the colour ·
       <b>SCRAMBLE</b> datamoshes everything. gaps between vocals fill from the <b>FILLER</b> icon pool
       (+ WORDS + images) — toggle the chips to curate it.
-      keep this tab visible while recording — capture is real-time.
+      <b>⇣ EXPORT</b> renders the clip offline — every frame perfect, no drops — use it for posting;
+      ● REC is the quick realtime preview (keep the tab visible while it runs).
     </div>
   </aside>
 
@@ -282,7 +288,8 @@
         <span id="clipInfo">in 0:00 · 15s</span>
         <span class="spacer"></span>
         <button class="tbtn" id="resBtn" title="recording resolution">720p</button>
-        <button id="recBtn">● REC</button>
+        <button id="recBtn" title="quick realtime capture — may drop frames">● REC</button>
+        <button id="exportBtn" title="offline render: every frame perfect, no realtime drops — the post-quality path">⇣ EXPORT</button>
       </div>
     </div>
   </section>
@@ -344,6 +351,11 @@ function mulberry32(seed){
   };
 }
 const fmtT = s => { s=Math.max(0,s); const m=Math.floor(s/60), r=Math.floor(s%60); return m+':'+String(r).padStart(2,'0'); };
+
+/* virtual clock: null → realtime; during offline export it is the song time
+   of the frame being rendered, so cuts/decays land identically off-clock */
+let renderClock = null;
+const clockNow = () => renderClock!==null ? renderClock : performance.now()/1000;
 
 /* ---------- state ---------- */
 /* channel slots — any song, any stems. a slot's REACTION ROLE decides what
@@ -434,6 +446,7 @@ async function loadStem(idx, file, stripEl){
   if(wasPlaying) playAll(startOffset);
 }
 function playAll(offset){
+  if(exporting) return;
   ensureCtx();
   if(actx.state==='suspended') actx.resume();
   const loaded = slots.filter(s=>s.buffer);
@@ -455,6 +468,7 @@ function stopAll(){
   playing = false; $('#playBtn').textContent='►';
 }
 function playhead(){
+  if(renderClock!==null) return renderClock;
   return playing ? startOffset + (actx.currentTime - startCtxTime) : startOffset;
 }
 function seekTo(t){
@@ -754,7 +768,7 @@ function newShot(){
   };
   if(shot.mode==='art' && !imgA && !imgB) shot.mode = shot.icon ? 'icon' : 'type';
   if(/type|stack|wall/.test(shot.mode) && !shot.word) shot.word = 'STEMVIS';
-  cutFlash = 1; lastCutReal = performance.now()/1000;
+  cutFlash = 1; lastCutReal = clockNow();
 }
 function shotImg(){ return shot.imgPick ? (imgA||imgB) : (imgB||imgA); }
 
@@ -766,11 +780,11 @@ function drawKinetic(dt){
   const bE=env('bass'), vE=env('vox'), aE=env('arps'), hE=env('hats'), chE=env('chords');
 
   /* lyric lines force cuts with their text */
-  const li = playing ? currentLyric() : -1;
+  const li = (playing || renderClock!==null) ? currentLyric() : -1;
   if(li !== lyricIdx){ lyricIdx = li; if(li>=0) newShot(); }
 
   /* cuts: every N kicks (CUTS), fx forces, timeout fallback */
-  const nowS = performance.now()/1000;
+  const nowS = clockNow();
   const cutEvery = params.cuts>.75?1 : params.cuts>.5?2 : params.cuts>.25?4 : 8;
   if(hit('kick')){ kickCount++; if(kickCount%cutEvery===0) newShot(); }
   if(hit('fx')) newShot();
@@ -1141,6 +1155,7 @@ function loop(){
   const now = performance.now();
   const dt = clamp((now-lastFrame)/1000, 0, .05);
   lastFrame = now;
+  if(exporting){ requestAnimationFrame(loop); return; }   // export loop owns the canvas
   analyse(dt);
   drawFrame(dt);
 
@@ -1456,6 +1471,7 @@ function pickMime(){
   return '';
 }
 $('#recBtn').addEventListener('click', ()=>{
+  if(exporting){ setStatus('export in progress — cancel it first','rec'); return; }
   if(recording){ finishRec(); return; }
   const loaded = slots.some(s=>s.buffer);
   if(!loaded){ setStatus('load at least one stem first','rec'); return; }
@@ -1500,6 +1516,228 @@ function saveRecording(){
   setTimeout(()=>URL.revokeObjectURL(url), 30000);
   setStatus('saved '+a.download+(ext==='webm'?' — TikTok web accepts webm; convert to mp4 for IG':''), 'ok');
 }
+
+/* =====================================================================
+   OFFLINE EXPORT — the post-quality path.
+   Steps the renderer frame-by-frame on a virtual clock (no realtime, no
+   dropped frames), recomputes stem envelopes/onsets mathematically from
+   the decoded audio, encodes VP9 + Opus via WebCodecs, and muxes a WebM
+   with the minimal Matroska writer below. REC stays for quick previews.
+   ===================================================================== */
+let exporting = false, exportAbort = false;
+const tick = () => new Promise(r=>setTimeout(r,0));
+
+/* per-frame envelope/onset from a decoded buffer — mirrors analyse() */
+function computeSlotFeatures(slot, t0, fps, frames){
+  const out = {env:new Float32Array(frames), onset:new Uint8Array(frames)};
+  const buf = slot.buffer, sr = buf.sampleRate;
+  const ch = buf.getChannelData(0);
+  const ch2 = buf.numberOfChannels>1 ? buf.getChannelData(1) : null;
+  let peak=0, envV=0, prev=0, lastOn=-9;
+  const dt = 1/fps, win = 1024;
+  for(let f=0; f<frames; f++){
+    const t = t0 + f*dt;
+    const c = Math.floor(t*sr);
+    let sum=0, n=0;
+    for(let i=Math.max(0,c-win); i<Math.min(ch.length,c); i+=2){
+      const v = ch2 ? (ch[i]+ch2[i])*.5 : ch[i];
+      sum += v*v; n++;
+    }
+    const rms = n ? Math.sqrt(sum/n) : 0;
+    peak = Math.max(peak*Math.pow(.5, dt/2.5), rms);
+    const nrm = peak>.006 ? clamp(rms/peak,0,1) : 0;
+    envV = nrm>envV ? nrm : lerp(envV, nrm, 1-Math.pow(.001, dt*3));
+    if(nrm-prev > .2 && nrm > .3 && (t-lastOn) > .085){ out.onset[f]=1; lastOn=t; }
+    prev = lerp(prev, nrm, .55);
+    out.env[f] = envV;
+  }
+  return out;
+}
+
+/* ---------- minimal Matroska/WebM muxer (VP9 video + Opus audio) ---------- */
+function muxWebM(o){
+  const vint = n => {
+    let len = 1;
+    while(len < 8 && n >= Math.pow(2, 7*len)-1) len++;
+    const b = new Uint8Array(len);
+    let v = n;
+    for(let i=len-1; i>0; i--){ b[i]=v&0xff; v=Math.floor(v/256); }
+    b[0] = (0x80 >> (len-1)) | v;
+    return b;
+  };
+  const uintBytes = n => { const b=[]; if(!n) b.push(0); while(n>0){ b.unshift(n&0xff); n=Math.floor(n/256); } return new Uint8Array(b); };
+  const cat = arrs => {
+    let L=0; for(const a of arrs) L+=a.length;
+    const out=new Uint8Array(L); let p=0;
+    for(const a of arrs){ out.set(a,p); p+=a.length; }
+    return out;
+  };
+  const el = (id, payload) => cat([uintBytes(id), vint(payload.length), payload]);
+  const uintEl = (id,n) => el(id, uintBytes(n));
+  const strEl = (id,s) => el(id, new TextEncoder().encode(s));
+  const floatEl = (id,f) => { const b=new Uint8Array(8); new DataView(b.buffer).setFloat64(0,f); return el(id,b); };
+
+  const ebml = el(0x1A45DFA3, cat([
+    uintEl(0x4286,1), uintEl(0x42F7,1), uintEl(0x42F2,4), uintEl(0x42F3,8),
+    strEl(0x4282,'webm'), uintEl(0x4287,4), uintEl(0x4285,2),
+  ]));
+  const info = el(0x1549A966, cat([
+    uintEl(0x2AD7B1,1000000), strEl(0x4D80,'stemvis'), strEl(0x5741,'stemvis'),
+    floatEl(0x4489,o.duration),
+  ]));
+  const vTrack = el(0xAE, cat([
+    uintEl(0xD7,1), uintEl(0x73C5,1), uintEl(0x83,1), strEl(0x86,'V_VP9'),
+    el(0xE0, cat([uintEl(0xB0,o.width), uintEl(0xBA,o.height)])),
+  ]));
+  const aParts = [uintEl(0xD7,2), uintEl(0x73C5,2), uintEl(0x83,2), strEl(0x86,'A_OPUS')];
+  if(o.opusDesc) aParts.push(el(0x63A2, o.opusDesc));
+  aParts.push(el(0xE1, cat([floatEl(0xB5,48000), uintEl(0x9F,2)])));
+  const tracks = el(0x1654AE6B, cat([vTrack, el(0xAE, cat(aParts))]));
+
+  /* interleave blocks into ~2s clusters, new cluster on video keyframes */
+  const blocks = [];
+  for(const c of o.vChunks){ const d=new Uint8Array(c.byteLength); c.copyTo(d); blocks.push({t:c.timestamp/1000, tr:1, key:c.type==='key', d}); }
+  for(const c of o.aChunks){ const d=new Uint8Array(c.byteLength); c.copyTo(d); blocks.push({t:c.timestamp/1000, tr:2, key:true, d}); }
+  blocks.sort((a,b)=> a.t-b.t || a.tr-b.tr);
+  const clusters = [];
+  let cluStart = -1, cluParts = null;
+  for(const b of blocks){
+    if(cluStart<0 || b.t-cluStart>4000 || (b.tr===1 && b.key && b.t-cluStart>=1900)){
+      if(cluParts) clusters.push(el(0x1F43B675, cat(cluParts)));
+      cluStart = Math.round(b.t);
+      cluParts = [uintEl(0xE7, cluStart)];
+    }
+    const rel = Math.round(b.t) - cluStart;
+    const head = new Uint8Array(4);
+    head[0] = 0x80 | b.tr;
+    head[1] = (rel>>8)&0xff; head[2] = rel&0xff;
+    head[3] = b.key ? 0x80 : 0;
+    cluParts.push(el(0xA3, cat([head, b.d])));
+  }
+  if(cluParts) clusters.push(el(0x1F43B675, cat(cluParts)));
+
+  return new Blob([ebml, el(0x18538067, cat([info, tracks, ...clusters]))], {type:'video/webm'});
+}
+
+/* fallback OpusHead if the encoder doesn't hand us one */
+function opusHead(){
+  const b = new Uint8Array(19);
+  b.set([0x4F,0x70,0x75,0x73,0x48,0x65,0x61,0x64]);   // "OpusHead"
+  b[8]=1; b[9]=2;                                      // version, channels
+  const dv = new DataView(b.buffer);
+  dv.setUint16(10, 312, true);                         // pre-skip
+  dv.setUint32(12, 48000, true);                       // input rate
+  return b;                                            // gain 0, mapping 0
+}
+
+async function exportClip(){
+  if(!('VideoEncoder' in window)){ setStatus('offline export needs WebCodecs — use Chrome','rec'); return; }
+  if(recording){ setStatus('stop the recording first','rec'); return; }
+  if(!slots.some(s=>s.buffer)){ setStatus('load at least one stem first','rec'); return; }
+  const fps = 30;
+  const t0 = clipIn, t1 = Math.min(clipEndT(), duration);
+  if(t1-t0 < 1){ setStatus('clip region is outside the song — move IN point','rec'); return; }
+  const frames = Math.floor((t1-t0)*fps);
+  exporting = true; exportAbort = false;
+  stopAll();
+  $('#exportBtn').textContent = '✕ CANCEL';
+
+  try{
+    setStatus('export 1/4 — analysing stems …'); await tick();
+    const feats = slots.map(s => (s.buffer && s.role!=='off') ? computeSlotFeatures(s, t0, fps, frames) : null);
+
+    setStatus('export 2/4 — mixing audio …'); await tick();
+    const oac = new OfflineAudioContext(2, Math.ceil((t1-t0)*48000), 48000);
+    for(const s of slots){
+      if(!s.buffer || s.mute) continue;
+      const src = oac.createBufferSource();
+      src.buffer = s.buffer;
+      src.connect(oac.destination);
+      if(t0 < s.buffer.duration) src.start(0, t0);
+    }
+    const mix = await oac.startRendering();
+
+    const vChunks = [], aChunks = [];
+    let opusDesc = null, encErr = null;
+    const venc = new VideoEncoder({ output:c=>vChunks.push(c), error:e=>encErr=e });
+    venc.configure({
+      codec:'vp09.00.10.08', width:recW, height:recH,
+      bitrate: hiRes?20_000_000:12_000_000, framerate:fps,
+    });
+    const aenc = new AudioEncoder({
+      output:(c,m)=>{
+        if(!opusDesc && m && m.decoderConfig && m.decoderConfig.description)
+          opusDesc = new Uint8Array(m.decoderConfig.description);
+        aChunks.push(c);
+      },
+      error:e=>encErr=e,
+    });
+    aenc.configure({codec:'opus', sampleRate:48000, numberOfChannels:2, bitrate:192_000});
+
+    const chL = mix.getChannelData(0), chR = mix.getChannelData(1);
+    for(let off=0; off<chL.length; off+=48000){
+      const n = Math.min(48000, chL.length-off);
+      const data = new Float32Array(n*2);
+      data.set(chL.subarray(off,off+n), 0);
+      data.set(chR.subarray(off,off+n), n);
+      aenc.encode(new AudioData({format:'f32-planar', sampleRate:48000, numberOfFrames:n, numberOfChannels:2, timestamp:off/48000*1e6, data}));
+    }
+
+    /* reset transient visual state so the seed's shot sequence renders clean */
+    punch=0; glitch=0; clapFlash=0; cutFlash=0; voxRings=[]; sparks=[];
+    shot=null; shotIdx=0; kickCount=0; lyricIdx=-1;
+
+    setStatus('export 3/4 — rendering frames …'); await tick();
+    for(let f=0; f<frames; f++){
+      if(exportAbort || encErr) break;
+      renderClock = t0 + f/fps;
+      slots.forEach((s,i)=>{
+        if(feats[i]){ s.env = feats[i].env[f]; s.onset = !!feats[i].onset[f]; }
+        else { s.env = 0; s.onset = false; }
+      });
+      drawFrame(1/fps);
+      const vf = new VideoFrame(cv, {timestamp: f/fps*1e6, duration: 1e6/fps});
+      venc.encode(vf, {keyFrame: f % (fps*2) === 0});
+      vf.close();
+      if(venc.encodeQueueSize > 4) await tick();
+      if(f % fps === 0){
+        setStatus('export 3/4 — rendering '+Math.round(f/frames*100)+'% …');
+        await tick();
+      }
+    }
+    renderClock = null;
+    await venc.flush(); await aenc.flush();
+    venc.close(); aenc.close();
+    if(encErr) throw encErr;
+
+    if(exportAbort){ setStatus('export cancelled'); }
+    else {
+      setStatus('export 4/4 — muxing …'); await tick();
+      const blob = muxWebM({
+        width:recW, height:recH, duration:(t1-t0)*1000,
+        vChunks, aChunks, opusDesc: opusDesc || opusHead(),
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'stemvis_'+seed.toString(36)+'_'+Math.round(t1-t0)+'s_export.webm';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url), 30000);
+      setStatus('saved '+a.download+' — offline render, zero dropped frames','ok');
+    }
+  } catch(e){
+    setStatus('export failed: '+(e && e.message ? e.message : e), 'rec');
+  }
+  renderClock = null;
+  exporting = false;
+  shot = null;                       // preview re-cuts fresh
+  slots.forEach(s=>{ s.env=0; s.onset=false; });
+  $('#exportBtn').textContent = '⇣ EXPORT';
+}
+$('#exportBtn').addEventListener('click', ()=>{
+  if(exporting){ exportAbort = true; return; }
+  exportClip();
+});
 
 /* ---------- status ---------- */
 function setStatus(msg, cls){
