@@ -579,6 +579,18 @@
       flex: 1;
     }
 
+    #vidRow {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    #vidRow .tbtn {
+      flex: 1;
+      padding: 6px 4px;
+      font-size: 10px;
+    }
+
     #timeList {
       margin-top: 8px;
       max-height: 36vh;
@@ -785,6 +797,21 @@
           <label class="imgSlot" id="fontBSlot">FONT B<input type="file" id="fontBFile"
               accept=".ttf,.otf,.woff,.woff2"></label>
         </div>
+        <div class="imgRow">
+          <label class="imgSlot" id="vidSlot"
+            title="screen-record FL playing the whole song; cuts will land on it with punch-in crops, theme-tinted">FL
+            VIDEO<input type="file" id="vidFile" accept="video/*"></label>
+        </div>
+        <div id="vidRow" style="display:none">
+          <button class="tbtn vmBtn active" data-vm="mix"
+            title="footage joins the cut rotation — the intercut format">MIX
+            IN</button>
+          <button class="tbtn vmBtn" data-vm="main"
+            title="footage-dominant; graphics interrupt, lyrics slam over it">MAIN</button>
+          <button class="tbtn vmBtn" data-vm="off" title="keep it loaded but unused">OFF</button>
+          <button class="tbtn" id="vidEarlier" title="video 0.1s earlier (shift-click: 1s)">V−</button>
+          <button class="tbtn" id="vidLater" title="video 0.1s later (shift-click: 1s)">V+</button>
+        </div>
         <textarea class="ptxt" id="wordsInput" rows="2" maxlength="400"
           placeholder="WORDS — one per line or comma separated; cuts pick from these between lyric lines"
           spellcheck="false"></textarea>
@@ -958,7 +985,7 @@
     const clipEndT = () => clipLen === 'full' ? duration : clipIn + clipLen;
     let recW = 720, recH = 1280, hiRes = false;
 
-    const params = { energy: .7, cuts: .5, warp: .35, scramble: .12, hue: .58, style: .5, size: .45 };
+    const params = { energy: .7, cuts: .5, warp: .35, scramble: .12, spread: .55, hue: .58, style: .5, size: .45 };
     let seed = (Math.random() * 1e9) | 0;
     let rng = mulberry32(seed);
 
@@ -1133,7 +1160,7 @@
        frame like a step sequencer; a contour line chains them so the melody's
        shape is literally drawn. VOICE chops join in when no lyric is showing. */
     let notes = [], noteCol = 0, sparkFx = 'shards';
-    const SPARK_FX_DEFS = [['shards','SHARDS'],['panels','PANELS'],['comets','COMETS'],['off','OFF']];
+    const SPARK_FX_DEFS = [['shards', 'SHARDS'], ['panels', 'PANELS'], ['comets', 'COMETS'], ['off', 'OFF']];
     function pitchOf(role) {
       let best = null;
       for (const s of slots) {
@@ -1145,15 +1172,23 @@
     }
     function spawnNote(role, strength) {
       const p = pitchOf(role);
-      let ang = -Math.PI/2 + (1-p)*Math.PI + (Math.random()-.5)*.7;   // high notes fly up, low notes dive
+      let ang = -Math.PI / 2 + (1 - p) * Math.PI + (Math.random() - .5) * .7;   // high notes fly up, low notes dive
       if (Math.random() < .5) ang = Math.PI - ang;                     // spray both sides
       noteCol = (noteCol + 2) % 5;
       notes.push({
-        p, ang, s: .6 + strength*.9, born: tGlobal, life: 1,
-        col: noteCol, row: Math.round((1-p)*6),
-        edge: Math.random()<.5 ? -1 : 1, y0: .12 + (1-p)*.6 + Math.random()*.08,
+        p, ang, s: .6 + strength * .9, born: tGlobal, life: 1,
+        col: noteCol, row: Math.round((1 - p) * 6),
+        edge: Math.random() < .5 ? -1 : 1, y0: .12 + (1 - p) * .6 + Math.random() * .08,
       });
-      if (notes.length > 28) notes.shift();
+      /* high SPREAD: notes echo — a second offset mark per onset */
+      if (params.spread > .65 && Math.random() < (params.spread - .65) * 2.2) {
+        notes.push({
+          p, ang: ang + (Math.random() - .5) * 1.4, s: .5 + strength * .6, born: tGlobal, life: .8,
+          col: (noteCol + 2) % 5, row: clamp(Math.round((1 - p) * 6) + (Math.random() < .5 ? -1 : 1), 0, 6),
+          edge: Math.random() < .5 ? -1 : 1, y0: .12 + (1 - p) * .6 + Math.random() * .14,
+        });
+      }
+      if (notes.length > 40) notes.splice(0, notes.length - 40);
     }
 
     /* ---------- renderer ---------- */
@@ -1161,6 +1196,19 @@
     let sparks = [], voxRings = [], punch = 0, glitch = 0, clapFlash = 0, tGlobal = 0, lastFrame = performance.now();
     let dotPat = null, grainPat = null;   // cached canvas patterns
     let imgA = null, imgB = null;
+    /* FL footage: hidden <video> synced to the song timeline; cuts land on it
+       as 'video' shots with seeded punch-in crops, theme-tinted for cohesion */
+    let vidEl = null, vidReady = false, vidOffset = 0, videoMode = 'mix';
+    function seekVideo(t) {
+      return new Promise(res => {
+        if (!vidEl) return res();
+        const tt = clamp(t, 0, (vidEl.duration || 1e9) - .05);
+        if (Math.abs(vidEl.currentTime - tt) < 1 / 120) return res();
+        const h = () => { vidEl.removeEventListener('seeked', h); res(); };
+        vidEl.addEventListener('seeked', h);
+        vidEl.currentTime = tt;
+      });
+    }
     const GLYPHS = '#%&@$0X§?!';
 
     /* grain texture */
@@ -1235,8 +1283,8 @@
        what plays between lyric lines. each entry is a self-contained painter —
        this is the plug-point for richer filler scenes later (animated sequences,
        image collages, …): add a painter + a shot mode that uses it. */
-    const ICON_LIST = ['star', 'sparkle', 'burst', 'cross', 'ring', 'target', 'diamond', 'bolt', 'heart', 'flower', 'arrow', 'spiral'];
-    const STROKE_ICONS = { burst: 1, ring: 1, target: 1, spiral: 1 };
+    const ICON_LIST = ['star', 'sparkle', 'burst', 'cross', 'ring', 'target', 'diamond', 'bolt', 'heart', 'flower', 'arrow', 'spiral', 'flame', 'moon', 'eye', 'note', 'wave'];
+    const STROKE_ICONS = { burst: 1, ring: 1, target: 1, spiral: 1, eye: 1, wave: 1 };
     let iconPool = new Set(['star', 'sparkle', 'burst', 'cross', 'ring', 'flower']);
     function iconPath(id, s) {
       ctx2d.beginPath();
@@ -1255,6 +1303,37 @@
       }
       else if (id === 'arrow') { ctx2d.moveTo(0, -s); ctx2d.lineTo(s * .6, -s * .25); ctx2d.lineTo(s * .22, -s * .25); ctx2d.lineTo(s * .22, s); ctx2d.lineTo(-s * .22, s); ctx2d.lineTo(-s * .22, -s * .25); ctx2d.lineTo(-s * .6, -s * .25); ctx2d.closePath(); }
       else if (id === 'spiral') { for (let t = 0; t <= Math.PI * 5; t += .2) { const rr = s * t / (Math.PI * 5); t ? ctx2d.lineTo(Math.cos(t) * rr, Math.sin(t) * rr) : ctx2d.moveTo(0, 0); } }
+      else if (id === 'flame') {
+        ctx2d.moveTo(0, -s);
+        ctx2d.bezierCurveTo(s * .5, -s * .5, s * .62, s * .05, s * .34, s * .45);
+        ctx2d.bezierCurveTo(s * .62, s * .55, s * .4, s * .95, 0, s);
+        ctx2d.bezierCurveTo(-s * .4, s * .95, -s * .62, s * .55, -s * .34, s * .45);
+        ctx2d.bezierCurveTo(-s * .62, s * .05, -s * .5, -s * .5, 0, -s);
+      }
+      else if (id === 'moon') {
+        ctx2d.arc(0, 0, s * .8, Math.PI * .3, Math.PI * 1.7);
+        ctx2d.arc(s * .5, 0, s * .6, Math.PI * 1.5, Math.PI * .5, true);
+        ctx2d.closePath();
+      }
+      else if (id === 'eye') {
+        ctx2d.moveTo(-s, 0); ctx2d.quadraticCurveTo(0, -s * .78, s, 0);
+        ctx2d.quadraticCurveTo(0, s * .78, -s, 0); ctx2d.closePath();
+        ctx2d.moveTo(s * .3, 0); ctx2d.arc(0, 0, s * .3, 0, Math.PI * 2);
+      }
+      else if (id === 'note') {
+        ctx2d.moveTo(-s * .05, s * .55); ctx2d.arc(-s * .38, s * .55, s * .32, 0, Math.PI * 2);
+        ctx2d.rect(-s * .12, -s * .85, s * .14, s * 1.4);
+        ctx2d.moveTo(s * .02, -s * .85);
+        ctx2d.bezierCurveTo(s * .52, -s * .6, s * .58, -s * .28, s * .3, -s * .02);
+        ctx2d.bezierCurveTo(s * .44, -s * .38, s * .28, -s * .58, s * .02, -s * .48);
+        ctx2d.closePath();
+      }
+      else if (id === 'wave') {
+        for (let x = -s; x <= s; x += s / 10) {
+          const yy = Math.sin(x / s * Math.PI * 2) * s * .38;
+          x === -s ? ctx2d.moveTo(x, yy) : ctx2d.lineTo(x, yy);
+        }
+      }
     }
     function paintIcon(id, s, col, accCol, treat) {
       const strokeOnly = STROKE_ICONS[id] || treat === 1;
@@ -1377,9 +1456,13 @@
       const words = kinWords();
       const icons = [...iconPool];
       const lyricOn = lyricIdx >= 0 && lyricLines[lyricIdx];
+      const vidOn = vidReady && videoMode !== 'off';
       let mode, word = '';
       if (lyricOn) {
-        mode = r() < .72 ? 'type' : 'art';
+        /* MAIN footage: lyrics mostly slam OVER the video; MIX: occasionally */
+        mode = vidOn && videoMode === 'main' ? (r() < .65 ? 'video' : 'type')
+          : vidOn && r() < .25 ? 'video'
+            : r() < .72 ? 'type' : 'art';
         word = lyricLines[lyricIdx];
       } else {
         /* filler: icons + WORDS + images, weighted by the theme — never stray lyric lines */
@@ -1392,6 +1475,7 @@
         /* director bias: drops want big bold shots, breakdowns want imagery */
         if (section === 'drop') { if (words.length) { push('type', 2); push('stack', 1); } if (icons.length) push('icon', 2); }
         else if (section === 'chill' && (imgA || imgB)) push('art', 2);
+        if (vidOn) push('video', videoMode === 'main' ? Math.max(8, cands.length * 2) : Math.max(3, (cands.length * .7) | 0));
         if (!cands.length) cands.push('type');
         mode = cands[(r() * cands.length) | 0];
         if (words.length) word = words[(r() * words.length) | 0];
@@ -1402,7 +1486,7 @@
         inv: r() < .35,
         vert: !lyricOn && r() < .18,
         tilt: (r() * 2 - 1) * .06,
-        y: .3 + r() * .4,
+        y: .5 + (r() - .5) * (.25 + params.spread * .55),
         zDir: r() < .55 ? 1 : -1,
         spin: (r() * 2 - 1) * .7,
         sats: r() < .45 ? 4 + (r() * 4 | 0) : 0,
@@ -1415,9 +1499,12 @@
         xo: layoutBias.xDrift + (r() * 2 - 1) * .08,
         useB: !!fontBFam && r() < .5,
         imgPick: r() < .5,
+        vZoom: [1, 1.35, 1.85][(r() * 3) | 0],   // punch-in crop levels for video shots
+        vfx: r(), vfy: r(),                       // crop focus point
         _px: 0,
       };
       if (shot.mode === 'art' && !imgA && !imgB) shot.mode = shot.icon ? 'icon' : 'type';
+      if (shot.mode === 'video' && !(vidReady && videoMode !== 'off')) shot.mode = 'type';
       if (/type|stack|wall/.test(shot.mode) && !shot.word) shot.word = 'STEMVIS';
       if (section === 'drop') { shot.scale = clamp(shot.scale * 1.18, .5, 1.2); shot.vert = false; }
       else if (section === 'chill') { shot.scale = clamp(shot.scale * .82, .45, 1.15); }
@@ -1516,7 +1603,7 @@
           const al = clamp(nt.life, 0, 1);
           if (sparkFx === 'shards') {
             /* streaks exploding out of the focal point — high notes up, low notes down */
-            const dist = mn * (.14 + age * (.6 + nt.s * .5) * (1 + punch * .4));
+            const dist = mn * (.12 + age * (.6 + nt.s * .5) * (1 + punch * .4)) * (.5 + params.spread * 1.4);
             const x = fx0 + Math.cos(nt.ang) * dist;
             const y = fy0 + Math.sin(nt.ang) * dist;
             const len = mn * (.07 + nt.s * .1) * al;
@@ -1535,12 +1622,17 @@
             ctx2d.strokeStyle = withA(ink, al * .5);
             ctx2d.lineWidth = 2;
             ctx2d.strokeRect(x + 3, y + 3, pw - 6, ph2 - 6);
+            if (params.spread > .6) {   // mirror panel widens the field
+              ctx2d.fillStyle = withA(acc, Math.pow(al, 1.6) * .2 * (params.spread - .6) * 2.5);
+              ctx2d.fillRect((4 - nt.col) * pw + 3, y + 3, pw - 6, ph2 - 6);
+            }
           } else if (sparkFx === 'comets') {
             /* comets streak across the whole frame at their pitch height */
-            const x = nt.edge > 0 ? W * (-.05 + age * .75) : W * (1.05 - age * .75);
+            const cSpd = .45 + params.spread * .75;
+            const x = nt.edge > 0 ? W * (-.05 + age * cSpd) : W * (1.05 - age * cSpd);
             if (x < -W * .1 || x > W * 1.1) { nt.life = 0; continue; }
-            const y = H * nt.y0 + Math.sin(age * 5 + i) * H * .01;
-            const tail = W * .12 * al;
+            const y = H * nt.y0 + Math.sin(age * 5 + i) * H * .012 * (.4 + params.spread);
+            const tail = W * (.06 + params.spread * .12) * al;
             const g4 = ctx2d.createLinearGradient(x - nt.edge * tail, y, x, y);
             g4.addColorStop(0, withA(acc, 0));
             g4.addColorStop(1, withA(acc, al * .8));
@@ -1555,7 +1647,38 @@
       const word = (shot.word || '').toUpperCase();
       const font = px => kinFont(px, shot.useB);
 
-      if (shot.mode === 'art' && shotImg()) {
+      if (shot.mode === 'video' && vidReady && vidEl.videoWidth) {
+        /* FL footage shot — cover-cropped with a seeded punch-in, theme-tinted
+           live ('color' blend) so the recording sits inside the aesthetic */
+        const vw = vidEl.videoWidth, vh = vidEl.videoHeight;
+        const sc = Math.max(W / vw, H / vh) * shot.vZoom * (1 + punch * .06 * (.4 + params.energy));
+        const dw = vw * sc, dh = vh * sc;
+        ctx2d.drawImage(vidEl, (W - dw) * shot.vfx, (H - dh) * shot.vfy, dw, dh);
+        ctx2d.globalCompositeOperation = 'color';
+        ctx2d.fillStyle = `hsl(${bh},65%,48%)`;
+        ctx2d.fillRect(0, 0, W, H);
+        ctx2d.globalCompositeOperation = 'multiply';
+        ctx2d.fillStyle = withA(acc, .12 + (T.soft ? .1 : 0));
+        ctx2d.fillRect(0, 0, W, H);
+        ctx2d.globalCompositeOperation = 'source-over';
+        if (word) {   // lyric/word slams over the footage
+          const lines = splitBalanced(word);
+          const fpx = Math.min(...lines.map(ln => fitPx(ln, font, W * .8 * szMul)), H * .14 * szMul * 1.2) * (1 + vE * .07);
+          shot._px = fpx;
+          ctx2d.font = font(fpx);
+          ctx2d.textAlign = 'center'; ctx2d.textBaseline = 'middle';
+          const lh = fpx * 1.15, ly = H * shot.y - (lines.length - 1) * lh / 2;
+          lines.forEach((ln, i) => {
+            const tw = ctx2d.measureText(ln).width;
+            if (shot.bar) {
+              ctx2d.fillStyle = acc;
+              ctx2d.fillRect(cx - tw / 2 - mn * .025, ly + i * lh - fpx * .62, tw + mn * .05, fpx * 1.24);
+              ctx2d.fillStyle = bg;
+            } else ctx2d.fillStyle = ink;
+            ctx2d.fillText(ln, cx, ly + i * lh);
+          });
+        }
+      } else if (shot.mode === 'art' && shotImg()) {
         const dc = duotone(shotImg());
         const sc = Math.max(W / dc.width, H / dc.height) * (1.12 + shotAge * .04 * shot.zDir);
         ctx2d.drawImage(dc, cx - dc.width * sc / 2 + W * shot.xo * .4, cy - dc.height * sc / 2, dc.width * sc, dc.height * sc);
@@ -2050,6 +2173,16 @@
       lastFrame = now;
       if (exporting) { requestAnimationFrame(loop); return; }   // export loop owns the canvas
       analyse(dt);
+      /* keep FL footage locked to the song timeline */
+      if (vidEl && vidReady && videoMode !== 'off') {
+        if (playing) {
+          const vt = playhead() - vidOffset;
+          if (vt >= 0 && vt < (vidEl.duration || 0)) {
+            if (vidEl.paused) vidEl.play().catch(() => { });
+            if (Math.abs(vidEl.currentTime - vt) > .18) vidEl.currentTime = vt;
+          } else if (!vidEl.paused) vidEl.pause();
+        } else if (!vidEl.paused) vidEl.pause();
+      }
       drawFrame(dt);
 
       /* meters + transport */
@@ -2170,6 +2303,34 @@
       if (e.target.files[0]) loadFontFile(e.target.files[0], $('#fontBSlot'), 'FONT B', f => fontBFam = f);
     });
     $('#wordsInput').addEventListener('input', saveLocal);
+
+    /* FL video upload + mode + sync nudge */
+    $('#vidFile').addEventListener('change', e => {
+      const f = e.target.files[0]; if (!f) return;
+      vidReady = false;
+      vidEl = document.createElement('video');
+      vidEl.muted = true; vidEl.playsInline = true; vidEl.preload = 'auto';
+      vidEl.src = URL.createObjectURL(f);
+      vidEl.addEventListener('loadeddata', () => {
+        vidReady = true;
+        $('#vidSlot').classList.add('loaded');
+        $('#vidSlot').firstChild.textContent = 'FL VIDEO ✓';
+        $('#vidRow').style.display = 'flex';
+        setStatus(f.name + ' loaded — MIX blends footage into the cuts; nudge V−/V+ if it drifts from the song', 'ok');
+      });
+    });
+    document.querySelectorAll('.vmBtn').forEach(b => b.addEventListener('click', () => {
+      document.querySelectorAll('.vmBtn').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      videoMode = b.dataset.vm;
+      shot = null;   // re-cut with the new rotation
+    }));
+    function nudgeVid(d) {
+      vidOffset += d;
+      setStatus('video offset ' + (vidOffset >= 0 ? '+' : '') + vidOffset.toFixed(2) + 's (video starts that far into the song)');
+    }
+    $('#vidEarlier').addEventListener('click', e => nudgeVid(e.shiftKey ? -1 : -.1));
+    $('#vidLater').addEventListener('click', e => nudgeVid(e.shiftKey ? 1 : .1));
 
     /* theme chips */
     function renderThemeChips() {
@@ -2319,6 +2480,7 @@
       { key: 'cuts', label: 'CUTS', tip: 'cut rate: every 8 kicks → every kick' },
       { key: 'warp', label: 'WARP', tip: 'liquid slice-melt riding the bass' },
       { key: 'scramble', label: 'SCRAMBLE', tip: 'datamosh blocks + glyph corruption' },
+      { key: 'spread', label: 'SPREAD', tip: 'how far melody fx + layouts reach across the frame' },
       { key: 'hue', label: 'HUE', tip: 'palette + duotone rotation' },
       { key: 'style', label: 'STYLE', tip: 'morphs the theme palette' },
       { key: 'size', label: 'SIZE', tip: 'type + icon scale' },
@@ -2569,6 +2731,101 @@
       return new Blob([ebml, el(0x18538067, cat([info, tracks, ...clusters]))], { type: 'video/webm' });
     }
 
+    /* ---------- minimal ISO-BMFF/MP4 muxer (H.264 video + AAC audio) ----------
+       progressive layout: ftyp · mdat (all video samples, then all audio) · moov.
+       vDesc = avcC from the encoder, aDesc = AudioSpecificConfig. */
+    function muxMP4(o) {
+      const te = new TextEncoder();
+      const cat = arrs => { let L = 0; for (const a of arrs) L += a.length; const out = new Uint8Array(L); let p = 0; for (const a of arrs) { out.set(a, p); p += a.length; } return out; };
+      const u32 = n => new Uint8Array([(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255]);
+      const u16 = n => new Uint8Array([(n >>> 8) & 255, n & 255]);
+      const u8 = n => new Uint8Array([n & 255]);
+      const Z = n => new Uint8Array(n);
+      const box = (type, ...p) => { const body = cat(p); return cat([u32(body.length + 8), te.encode(type), body]); };
+      const full = (type, ver, flags, ...p) => box(type, new Uint8Array([ver, (flags >> 16) & 255, (flags >> 8) & 255, flags & 255]), ...p);
+      const matrix = cat([u32(0x10000), u32(0), u32(0), u32(0), u32(0x10000), u32(0), u32(0), u32(0), u32(0x40000000)]);
+
+      const vSizes = o.vChunks.map(c => c.byteLength);
+      const aSizes = o.aChunks.map(c => c.byteLength);
+      const vBytes = vSizes.reduce((a, b) => a + b, 0);
+      const aBytes = aSizes.reduce((a, b) => a + b, 0);
+      const ftyp = box('ftyp', te.encode('isom'), u32(0x200), te.encode('isomiso2avc1mp41'));
+      const vOff = ftyp.length + 8;
+      const aOff = vOff + vBytes;
+
+      const VTS = 90000, delta = Math.round(VTS / o.fps);
+      const vDur = o.vChunks.length * delta;
+      const aDurTs = o.aChunks.length * 1024;   // AAC frames are 1024 samples @48k
+      const durMs = Math.round(Math.max(vDur / VTS, o.aSamples / 48000) * 1000);
+      const stss = [];
+      o.vChunks.forEach((c, i) => { if (c.type === 'key') stss.push(i + 1); });
+
+      const avc1 = box('avc1',
+        Z(6), u16(1),
+        u16(0), u16(0), Z(12),
+        u16(o.width), u16(o.height),
+        u32(0x480000), u32(0x480000),
+        u32(0), u16(1),
+        Z(32),
+        u16(24), u16(0xFFFF),
+        box('avcC', o.vDesc)
+      );
+      const dsi = cat([u8(0x05), u8(o.aDesc.length), o.aDesc]);
+      const dcd = cat([u8(0x04), u8(13 + dsi.length), u8(0x40), u8(0x15), Z(3), u32(192000), u32(192000), dsi]);
+      const sl = cat([u8(0x06), u8(1), u8(0x02)]);
+      const esPayload = cat([u8(0x03), u8(3 + dcd.length + sl.length), u16(1), u8(0), dcd, sl]);
+      const mp4a = box('mp4a',
+        Z(6), u16(1),
+        Z(8),
+        u16(2), u16(16), u16(0), u16(0),
+        u32(48000 << 16),
+        full('esds', 0, 0, esPayload)
+      );
+
+      const stblV = box('stbl',
+        full('stsd', 0, 0, u32(1), avc1),
+        full('stts', 0, 0, u32(1), u32(o.vChunks.length), u32(delta)),
+        full('stss', 0, 0, u32(stss.length), cat(stss.map(u32))),
+        full('stsc', 0, 0, u32(1), u32(1), u32(o.vChunks.length), u32(1)),
+        full('stsz', 0, 0, u32(0), u32(vSizes.length), cat(vSizes.map(u32))),
+        full('stco', 0, 0, u32(1), u32(vOff))
+      );
+      const stblA = box('stbl',
+        full('stsd', 0, 0, u32(1), mp4a),
+        full('stts', 0, 0, u32(1), u32(o.aChunks.length), u32(1024)),
+        full('stsc', 0, 0, u32(1), u32(1), u32(o.aChunks.length), u32(1)),
+        full('stsz', 0, 0, u32(0), u32(aSizes.length), cat(aSizes.map(u32))),
+        full('stco', 0, 0, u32(1), u32(aOff))
+      );
+      const dinf = box('dinf', full('dref', 0, 0, u32(1), full('url ', 0, 1)));
+      const trakV = box('trak',
+        full('tkhd', 0, 3, u32(0), u32(0), u32(1), u32(0), u32(durMs), Z(8), u16(0), u16(0), u16(0), u16(0), matrix, u32(o.width << 16), u32(o.height << 16)),
+        box('mdia',
+          full('mdhd', 0, 0, u32(0), u32(0), u32(VTS), u32(vDur), u16(0x55C4), u16(0)),
+          full('hdlr', 0, 0, u32(0), te.encode('vide'), Z(12), te.encode('VideoHandler\0')),
+          box('minf', full('vmhd', 0, 1, Z(8)), dinf, stblV)
+        )
+      );
+      const trakA = box('trak',
+        full('tkhd', 0, 3, u32(0), u32(0), u32(2), u32(0), u32(durMs), Z(8), u16(0), u16(0), u16(0x0100), u16(0), matrix, u32(0), u32(0)),
+        box('mdia',
+          full('mdhd', 0, 0, u32(0), u32(0), u32(48000), u32(aDurTs), u16(0x55C4), u16(0)),
+          full('hdlr', 0, 0, u32(0), te.encode('soun'), Z(12), te.encode('SoundHandler\0')),
+          box('minf', full('smhd', 0, 0, Z(4)), dinf, stblA)
+        )
+      );
+      const moov = box('moov',
+        full('mvhd', 0, 0, u32(0), u32(0), u32(1000), u32(durMs), u32(0x10000), u16(0x0100), u16(0), Z(8), matrix, Z(24), u32(3)),
+        trakV, trakA
+      );
+
+      const parts = [ftyp, cat([u32(8 + vBytes + aBytes), te.encode('mdat')])];
+      for (const c of o.vChunks) { const d = new Uint8Array(c.byteLength); c.copyTo(d); parts.push(d); }
+      for (const c of o.aChunks) { const d = new Uint8Array(c.byteLength); c.copyTo(d); parts.push(d); }
+      parts.push(moov);
+      return new Blob(parts, { type: 'video/mp4' });
+    }
+
     /* fallback OpusHead if the encoder doesn't hand us one */
     function opusHead() {
       const b = new Uint8Array(19);
@@ -2607,22 +2864,40 @@
         }
         const mix = await oac.startRendering();
 
+        /* prefer H.264 + AAC → .mp4 (TikTok/IG native); fall back to VP9 + Opus → .webm */
+        const vBitrate = hiRes ? 20_000_000 : 12_000_000;
+        const h264Cfg = { codec: 'avc1.640028', width: recW, height: recH, bitrate: vBitrate, framerate: fps, avc: { format: 'avc' } };
+        const aacCfg = { codec: 'mp4a.40.2', sampleRate: 48000, numberOfChannels: 2, bitrate: 192_000 };
+        let useMp4 = false;
+        try {
+          const vs = await VideoEncoder.isConfigSupported(h264Cfg);
+          const as = await AudioEncoder.isConfigSupported(aacCfg);
+          useMp4 = !!(vs.supported && as.supported);
+        } catch (e) { useMp4 = false; }
+
         const vChunks = [], aChunks = [];
-        let opusDesc = null, encErr = null;
-        const venc = new VideoEncoder({ output: c => vChunks.push(c), error: e => encErr = e });
-        venc.configure({
+        let vDesc = null, aDesc = null, encErr = null;
+        const venc = new VideoEncoder({
+          output: (c, m) => {
+            if (!vDesc && m && m.decoderConfig && m.decoderConfig.description)
+              vDesc = new Uint8Array(m.decoderConfig.description);
+            vChunks.push(c);
+          },
+          error: e => encErr = e,
+        });
+        venc.configure(useMp4 ? h264Cfg : {
           codec: 'vp09.00.10.08', width: recW, height: recH,
-          bitrate: hiRes ? 20_000_000 : 12_000_000, framerate: fps,
+          bitrate: vBitrate, framerate: fps,
         });
         const aenc = new AudioEncoder({
           output: (c, m) => {
-            if (!opusDesc && m && m.decoderConfig && m.decoderConfig.description)
-              opusDesc = new Uint8Array(m.decoderConfig.description);
+            if (!aDesc && m && m.decoderConfig && m.decoderConfig.description)
+              aDesc = new Uint8Array(m.decoderConfig.description);
             aChunks.push(c);
           },
           error: e => encErr = e,
         });
-        aenc.configure({ codec: 'opus', sampleRate: 48000, numberOfChannels: 2, bitrate: 192_000 });
+        aenc.configure(useMp4 ? aacCfg : { codec: 'opus', sampleRate: 48000, numberOfChannels: 2, bitrate: 192_000 });
 
         const chL = mix.getChannelData(0), chR = mix.getChannelData(1);
         for (let off = 0; off < chL.length; off += 48000) {
@@ -2641,6 +2916,7 @@
         notes = []; noteCol = 0;
 
         setStatus('export 3/4 — rendering frames …'); await tick();
+        if (vidEl && !vidEl.paused) vidEl.pause();   // export drives the video by seeking
         for (let f = 0; f < frames; f++) {
           if (exportAbort || encErr) break;
           renderClock = t0 + f / fps;
@@ -2648,6 +2924,9 @@
             if (feats[i]) { s.env = feats[i].env[f]; s.onset = !!feats[i].onset[f]; s.pitch = feats[i].pitch[f]; }
             else { s.env = 0; s.onset = false; }
           });
+          /* frame-accurate footage: seek only while a video shot is on screen */
+          if (vidReady && videoMode !== 'off' && shot && shot.mode === 'video')
+            await seekVideo(renderClock - vidOffset);
           drawFrame(1 / fps);
           const vf = new VideoFrame(cv, { timestamp: f / fps * 1e6, duration: 1e6 / fps });
           venc.encode(vf, { keyFrame: f % (fps * 2) === 0 });
@@ -2666,14 +2945,26 @@
         if (exportAbort) { setStatus('export cancelled'); }
         else {
           setStatus('export 4/4 — muxing …'); await tick();
-          const blob = muxWebM({
-            width: recW, height: recH, duration: (t1 - t0) * 1000,
-            vChunks, aChunks, opusDesc: opusDesc || opusHead(),
-          });
+          let blob, ext;
+          if (useMp4 && vDesc) {
+            blob = muxMP4({
+              width: recW, height: recH, fps,
+              vChunks, aChunks, vDesc,
+              aDesc: aDesc || new Uint8Array([0x11, 0x90]),   // AAC-LC 48k stereo
+              aSamples: chL.length,
+            });
+            ext = 'mp4';
+          } else {
+            blob = muxWebM({
+              width: recW, height: recH, duration: (t1 - t0) * 1000,
+              vChunks, aChunks, opusDesc: aDesc || opusHead(),
+            });
+            ext = 'webm';
+          }
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
-          a.download = 'stemvis_' + seed.toString(36) + '_' + Math.round(t1 - t0) + 's_export.webm';
+          a.download = 'stemvis_' + seed.toString(36) + '_' + Math.round(t1 - t0) + 's_export.' + ext;
           document.body.appendChild(a); a.click(); a.remove();
           setTimeout(() => URL.revokeObjectURL(url), 30000);
           setStatus('saved ' + a.download + ' — offline render, zero dropped frames', 'ok');

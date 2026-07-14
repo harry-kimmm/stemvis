@@ -56,6 +56,12 @@ Keep the tab visible while recording — capture is real-time.
   WORDS / images (never stray lyric text); the icon chips curate the pool.
   Each pool entry is a self-contained painter — the plug-point for richer
   filler scenes later
+- **FL VIDEO** — upload a screen recording of the DAW playing the song;
+  it syncs to the timeline (V−/V+ nudge) and joins the cut engine as
+  'video' shots with seeded punch-in crops, theme-colourised live so the
+  footage sits inside the aesthetic. MIX IN = intercut with graphics;
+  MAIN = footage-dominant with lyric lines slamming over it. Works in
+  offline export via frame-accurate seeking.
 - **Per-stem reactions** — kick: zoom pump + strobe invert · bass: warp
   slice-melt + row slides · clap: border + frame flash · hats: camera
   stutter + ink specks · chords: background colour breathing · arps:
@@ -75,8 +81,9 @@ Keep the tab visible while recording — capture is real-time.
 - **Seeded RNG** (mulberry32) — the whole shot sequence is reproducible per seed
 - **MediaRecorder** — quick realtime preview capture (● REC), 720p/1080p
 - **Offline export** (⇣ EXPORT) — virtual-clock frame stepping + offline
-  feature recomputation + WebCodecs VP9/Opus + built-in WebM muxer;
-  the posting-quality path
+  feature recomputation + WebCodecs; encodes H.264 + AAC and muxes **MP4**
+  with a built-in ISO-BMFF writer (VP9/Opus → WebM fallback if H.264
+  encoding is unavailable). The posting-quality path.
 
 ## Roadmap
 
@@ -92,5 +99,5 @@ Keep the tab visible while recording — capture is real-time.
       virtual clock, recomputes stem features from the decoded audio,
       encodes VP9 + Opus via WebCodecs, muxes WebM with a built-in minimal
       Matroska writer. Zero dropped frames at any machine speed.
-- [ ] Offline export straight to MP4 (hand-written ISO-BMFF muxer) for
-      Instagram-friendly files without conversion
+- [x] Offline export straight to MP4 (hand-written ISO-BMFF muxer,
+      H.264 + AAC) — no conversion needed for TikTok or Instagram
