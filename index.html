@@ -583,6 +583,7 @@
       display: flex;
       gap: 6px;
       margin-top: 8px;
+      flex-wrap: wrap;
     }
 
     #vidRow .tbtn {
@@ -803,11 +804,12 @@
             VIDEO<input type="file" id="vidFile" accept="video/*"></label>
         </div>
         <div id="vidRow" style="display:none">
-          <button class="tbtn vmBtn active" data-vm="mix"
-            title="footage joins the cut rotation — the intercut format">MIX
-            IN</button>
+          <button class="tbtn vmBtn" data-vm="bg"
+            title="footage is a constant, stable backdrop — graphics dance over it">ALWAYS</button>
           <button class="tbtn vmBtn" data-vm="main"
-            title="footage-dominant; graphics interrupt, lyrics slam over it">MAIN</button>
+            title="footage-dominant cuts; lyrics slam over it">MAIN</button>
+          <button class="tbtn vmBtn active" data-vm="mix" title="footage intercut with the graphics">MIX</button>
+          <button class="tbtn vmBtn" data-vm="rare" title="an occasional footage cutaway">RARE</button>
           <button class="tbtn vmBtn" data-vm="off" title="keep it loaded but unused">OFF</button>
           <button class="tbtn" id="vidEarlier" title="video 0.1s earlier (shift-click: 1s)">V−</button>
           <button class="tbtn" id="vidLater" title="video 0.1s later (shift-click: 1s)">V+</button>
@@ -1198,7 +1200,23 @@
     let imgA = null, imgB = null;
     /* FL footage: hidden <video> synced to the song timeline; cuts land on it
        as 'video' shots with seeded punch-in crops, theme-tinted for cohesion */
-    let vidEl = null, vidReady = false, vidOffset = 0, videoMode = 'mix';
+    let vidEl = null, vidReady = false, vidOffset = 0, videoMode = 'mix', vidShotN = 0;
+    /* persistent smooth video camera: crops EASE between targets (Ken Burns)
+       instead of jumping per cut, so the footage stays trackable */
+    const vidCam = { z: 1.08, fx: .5, fy: .35, tz: 1.08, tfx: .5, tfy: .35 };
+    function drawVideoFrame(W, H, z, fx, fy, bh, acc, soften) {
+      const vw = vidEl.videoWidth, vh = vidEl.videoHeight;
+      const sc = Math.max(W / vw, H / vh) * z;
+      const dw = vw * sc, dh = vh * sc;
+      ctx2d.drawImage(vidEl, (W - dw) * fx, (H - dh) * fy, dw, dh);
+      ctx2d.globalCompositeOperation = 'color';       // theme colourise
+      ctx2d.fillStyle = `hsl(${bh},65%,48%)`;
+      ctx2d.fillRect(0, 0, W, H);
+      ctx2d.globalCompositeOperation = 'multiply';    // deepen toward the palette
+      ctx2d.fillStyle = withA(acc, soften);
+      ctx2d.fillRect(0, 0, W, H);
+      ctx2d.globalCompositeOperation = 'source-over';
+    }
     function seekVideo(t) {
       return new Promise(res => {
         if (!vidEl) return res();
@@ -1456,12 +1474,12 @@
       const words = kinWords();
       const icons = [...iconPool];
       const lyricOn = lyricIdx >= 0 && lyricLines[lyricIdx];
-      const vidOn = vidReady && videoMode !== 'off';
+      const vidOn = vidReady && videoMode !== 'off' && videoMode !== 'bg';   // 'bg' draws under everything instead
       let mode, word = '';
       if (lyricOn) {
         /* MAIN footage: lyrics mostly slam OVER the video; MIX: occasionally */
         mode = vidOn && videoMode === 'main' ? (r() < .65 ? 'video' : 'type')
-          : vidOn && r() < .25 ? 'video'
+          : vidOn && videoMode === 'mix' && r() < .25 ? 'video'
             : r() < .72 ? 'type' : 'art';
         word = lyricLines[lyricIdx];
       } else {
@@ -1475,7 +1493,10 @@
         /* director bias: drops want big bold shots, breakdowns want imagery */
         if (section === 'drop') { if (words.length) { push('type', 2); push('stack', 1); } if (icons.length) push('icon', 2); }
         else if (section === 'chill' && (imgA || imgB)) push('art', 2);
-        if (vidOn) push('video', videoMode === 'main' ? Math.max(8, cands.length * 2) : Math.max(3, (cands.length * .7) | 0));
+        if (vidOn) {
+          const b2 = Math.max(1, cands.length);
+          push('video', videoMode === 'main' ? b2 * 2 : videoMode === 'mix' ? Math.max(2, (b2 * .7) | 0) : Math.max(1, (b2 * .2) | 0));
+        }
         if (!cands.length) cands.push('type');
         mode = cands[(r() * cands.length) | 0];
         if (words.length) word = words[(r() * words.length) | 0];
@@ -1499,12 +1520,25 @@
         xo: layoutBias.xDrift + (r() * 2 - 1) * .08,
         useB: !!fontBFam && r() < .5,
         imgPick: r() < .5,
-        vZoom: [1, 1.35, 1.85][(r() * 3) | 0],   // punch-in crop levels for video shots
-        vfx: r(), vfy: r(),                       // crop focus point
         _px: 0,
       };
       if (shot.mode === 'art' && !imgA && !imgB) shot.mode = shot.icon ? 'icon' : 'type';
       if (shot.mode === 'video' && !(vidReady && videoMode !== 'off')) shot.mode = 'type';
+      /* smooth video camera: only retarget the crop every few footage shots
+         (or on a drop), and gently — the eased pan keeps it trackable */
+      if (shot.mode === 'video') {
+        shot.tilt = 0;
+        vidShotN++;
+        if (vidShotN % 3 === 1 || section === 'drop') {
+          vidCam.tz = [1.04, 1.15, 1.32][(r() * 3) | 0];
+          vidCam.tfx = .2 + r() * .6;
+          vidCam.tfy = .15 + r() * .6;
+        }
+      } else if (videoMode === 'bg' && vidReady && shotIdx % 4 === 1) {
+        vidCam.tz = [1.02, 1.08, 1.16][(r() * 3) | 0];
+        vidCam.tfx = .25 + r() * .5;
+        vidCam.tfy = .2 + r() * .5;
+      }
       if (/type|stack|wall/.test(shot.mode) && !shot.word) shot.word = 'STEMVIS';
       if (section === 'drop') { shot.scale = clamp(shot.scale * 1.18, .5, 1.2); shot.vert = false; }
       else if (section === 'chill') { shot.scale = clamp(shot.scale * .82, .45, 1.15); }
@@ -1562,6 +1596,18 @@
       lastPal = { bg, ink, acc };
       ctx2d.fillStyle = bg; ctx2d.fillRect(0, 0, W, H);
 
+      /* ease the video camera toward its target (slow Ken Burns) */
+      if (vidReady && videoMode !== 'off') {
+        const k = 1 - Math.pow(.001, dt * .5);
+        vidCam.z = lerp(vidCam.z, vidCam.tz, k);
+        vidCam.fx = lerp(vidCam.fx, vidCam.tfx, k);
+        vidCam.fy = lerp(vidCam.fy, vidCam.tfy, k);
+      }
+      /* ALWAYS mode: footage as a stable, screen-fixed backdrop under everything */
+      if (videoMode === 'bg' && vidReady && vidEl.videoWidth) {
+        drawVideoFrame(W, H, vidCam.z, vidCam.fx, vidCam.fy, bh, acc, .3);
+      }
+
       /* aura — glowing halo ring behind the focal point, breathing with the bass */
       if (T.aura) {
         const fy = H * shot.y;
@@ -1582,13 +1628,15 @@
         * (1 + bE * .05 * T.motion * secMotion)
         * (1 + buildAmt * .16)
         * (1 + dropFlash * .12);
-      const jAmp = hE * (3 + params.scramble * 16) + buildAmt * 5;
-      const hhx = (Math.sin(tGlobal * .37) * 2.6 + Math.sin(tGlobal * 1.31) * 1.2) * T.motion;
-      const hhy = (Math.cos(tGlobal * .29) * 2.2 + Math.sin(tGlobal * 1.13) * 1.1) * T.motion;
+      const stab = shot.mode === 'video' ? .3 : 1;   // footage shots stay watchable
+      const camS = 1 + (cam - 1) * stab;
+      const jAmp = (hE * (3 + params.scramble * 16) + buildAmt * 5) * stab;
+      const hhx = (Math.sin(tGlobal * .37) * 2.6 + Math.sin(tGlobal * 1.31) * 1.2) * T.motion * stab;
+      const hhy = (Math.cos(tGlobal * .29) * 2.2 + Math.sin(tGlobal * 1.13) * 1.1) * T.motion * stab;
       const jx = (Math.random() - .5) * jAmp + hhx, jy = (Math.random() - .5) * jAmp + hhy;
       ctx2d.save();
-      ctx2d.translate(cx + jx, cy + jy); ctx2d.scale(cam, cam);
-      ctx2d.rotate(shot.tilt * (1 + params.warp) + Math.sin(tGlobal * .21) * .004);
+      ctx2d.translate(cx + jx, cy + jy); ctx2d.scale(camS, camS);
+      ctx2d.rotate((shot.tilt * (1 + params.warp) + Math.sin(tGlobal * .21) * .004) * stab);
       ctx2d.translate(-cx, -cy);
 
       /* SPARK FX → the melody made visible, full-frame, drawn BEHIND the focal
@@ -1648,19 +1696,9 @@
       const font = px => kinFont(px, shot.useB);
 
       if (shot.mode === 'video' && vidReady && vidEl.videoWidth) {
-        /* FL footage shot — cover-cropped with a seeded punch-in, theme-tinted
-           live ('color' blend) so the recording sits inside the aesthetic */
-        const vw = vidEl.videoWidth, vh = vidEl.videoHeight;
-        const sc = Math.max(W / vw, H / vh) * shot.vZoom * (1 + punch * .06 * (.4 + params.energy));
-        const dw = vw * sc, dh = vh * sc;
-        ctx2d.drawImage(vidEl, (W - dw) * shot.vfx, (H - dh) * shot.vfy, dw, dh);
-        ctx2d.globalCompositeOperation = 'color';
-        ctx2d.fillStyle = `hsl(${bh},65%,48%)`;
-        ctx2d.fillRect(0, 0, W, H);
-        ctx2d.globalCompositeOperation = 'multiply';
-        ctx2d.fillStyle = withA(acc, .12 + (T.soft ? .1 : 0));
-        ctx2d.fillRect(0, 0, W, H);
-        ctx2d.globalCompositeOperation = 'source-over';
+        /* FL footage shot — smooth persistent crop (vidCam), gentle kick pump,
+           theme-tinted live so the recording sits inside the aesthetic */
+        drawVideoFrame(W, H, vidCam.z * (1 + punch * .025), vidCam.fx, vidCam.fy, bh, acc, .12 + (T.soft ? .1 : 0));
         if (word) {   // lyric/word slams over the footage
           const lines = splitBalanced(word);
           const fpx = Math.min(...lines.map(ln => fitPx(ln, font, W * .8 * szMul)), H * .14 * szMul * 1.2) * (1 + vE * .07);
@@ -2924,8 +2962,8 @@
             if (feats[i]) { s.env = feats[i].env[f]; s.onset = !!feats[i].onset[f]; s.pitch = feats[i].pitch[f]; }
             else { s.env = 0; s.onset = false; }
           });
-          /* frame-accurate footage: seek only while a video shot is on screen */
-          if (vidReady && videoMode !== 'off' && shot && shot.mode === 'video')
+          /* frame-accurate footage: seek while footage is on screen */
+          if (vidReady && (videoMode === 'bg' || (videoMode !== 'off' && shot && shot.mode === 'video')))
             await seekVideo(renderClock - vidOffset);
           drawFrame(1 / fps);
           const vf = new VideoFrame(cv, { timestamp: f / fps * 1e6, duration: 1e6 / fps });
